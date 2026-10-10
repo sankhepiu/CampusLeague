@@ -1,0 +1,65 @@
+.title {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.statLabel {
+  font-size: 0.8rem;
+  color: var(--cl-color-text-muted);
+}
+
+.statValue {
+  font-size: 1.3rem;
+}
+
+.positive {
+  color: var(--cl-color-success);
+}
+
+.negative {
+  color: var(--cl-color-danger);
+}
+
+.accountRows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.accountRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--cl-color-text-muted);
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--cl-color-bg-raised);
+}
+
+.accountRow:last-child {
+  border-bottom: none;
+}
+
+.section {
+  margin-top: 1rem;
+}
+
+.sectionLabel {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  color: var(--cl-color-text-muted);
+  margin: 0 0 0.5rem;
+}

@@ -7,15 +7,32 @@ export type AsyncState<T> =
   | { status: 'success'; data: T; error: null }
   | { status: 'error'; data: null; error: ApiError };
 
+export interface UseAsyncOptions {
+  /** When false, the fetch never fires and state stays 'idle' — for data
+   * that's only relevant/authorized behind a condition (a role check, a
+   * toggle) so it shouldn't be requested for every viewer. Defaults true. */
+  enabled?: boolean;
+}
+
 /** Runs an async function on mount (or when `deps` change) and tracks
  * loading/success/error state with a normalized ApiError shape. */
-export function useAsync<T>(fn: () => Promise<T>, deps: ReadonlyArray<unknown> = []): AsyncState<T> & { reload: () => void } {
+export function useAsync<T>(
+  fn: () => Promise<T>,
+  deps: ReadonlyArray<unknown> = [],
+  options: UseAsyncOptions = {},
+): AsyncState<T> & { reload: () => void } {
+  const { enabled = true } = options;
   const [state, setState] = useState<AsyncState<T>>({ status: 'idle', data: null, error: null });
   const fnRef = useRef(fn);
   fnRef.current = fn;
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
+    if (!enabled) {
+      setState({ status: 'idle', data: null, error: null });
+      return;
+    }
+
     let cancelled = false;
     setState({ status: 'loading', data: null, error: null });
 
@@ -34,7 +51,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: ReadonlyArray<unknown> =
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, reloadToken]);
+  }, [...deps, reloadToken, enabled]);
 
   const reload = useCallback(() => setReloadToken((n) => n + 1), []);
 

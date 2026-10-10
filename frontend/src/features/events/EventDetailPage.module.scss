@@ -1,0 +1,212 @@
+@use '../../styles/mixins';
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.title {
+  font-family: var(--cl-font-pixel);
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.meta {
+  color: var(--cl-color-text-muted);
+  margin: 0 0 0.25rem;
+}
+
+.description {
+  margin: 1rem 0 1.5rem;
+  color: var(--cl-color-text-muted);
+}
+
+.editLink {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tierGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.tierName {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.75rem;
+  margin: 0 0 0.6rem;
+}
+
+.priceRow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.price {
+  font-size: 1.3rem;
+}
+
+.referencePrice {
+  font-size: 0.8rem;
+  color: var(--cl-color-text-muted);
+}
+
+.strike {
+  text-decoration: line-through;
+}
+
+.seats {
+  font-size: 0.85rem;
+  color: var(--cl-color-text-muted);
+  margin: 0.5rem 0;
+}
+
+.tierButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  width: 100%;
+  margin-top: 0.75rem;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.6rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.tierButton:disabled {
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text-muted);
+  cursor: default;
+  opacity: 0.7;
+}
+
+.checkout {
+  margin-bottom: 1.5rem;
+}
+
+.checkoutRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.quantityRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.qtyButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  font-family: var(--cl-font-pixel);
+  cursor: pointer;
+}
+
+.qtyButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.total {
+  font-size: 1.4rem;
+}
+
+.testOutcome {
+  margin: 1rem 0;
+}
+
+.checkoutActions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--cl-color-primary-dark);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.buttonSecondary {
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+}
+
+.successBox {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.ticketList {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.ticketRow {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.7rem;
+  color: var(--cl-color-primary);
+}
+
+.staffSection {
+  margin-top: 2rem;
+}
+
+.staffToggle {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.6rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
