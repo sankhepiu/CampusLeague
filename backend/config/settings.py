@@ -242,3 +242,15 @@ else:
     }
 
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or 'Campus League <no-reply@campusleague.local>'
+
+
+# Payments
+# "mock" (the default) or "razorpay" (Razorpay TEST mode). The keys are read
+# from the environment only; real values belong in backend/.env and nowhere
+# in the repository. If razorpay is chosen but a key is missing, the server
+# falls back to the mock gateway and logs a warning (see shop/razorpay.py).
+PAYMENT_GATEWAY = (os.environ.get('PAYMENT_GATEWAY') or 'mock').strip().lower()
+if PAYMENT_GATEWAY not in ('mock', 'razorpay'):
+    raise ImproperlyConfigured(f'PAYMENT_GATEWAY={PAYMENT_GATEWAY!r} is not valid. Use "mock" or "razorpay".')
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '').strip()
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '').strip()

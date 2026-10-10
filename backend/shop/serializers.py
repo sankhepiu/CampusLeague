@@ -37,7 +37,9 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ['id', 'status', 'subtotal', 'discount', 'total', 'payment_ref', 'created_at', 'lines']
+        fields = [
+            'id', 'status', 'subtotal', 'discount', 'total', 'payment_ref', 'needs_refund', 'created_at', 'lines',
+        ]
         read_only_fields = fields
 
 
@@ -123,3 +125,50 @@ class MerchOrderSerializer(serializers.Serializer):
                 ErrorDetail('Each size may appear once; use quantity for more.', code='duplicate_item')
             )
         return items
+
+
+# Razorpay (see razorpay.py) -----------------------------------------------
+
+class RazorpayOrderSerializer(serializers.Serializer):
+    """Body of POST /payments/razorpay/order: `purpose`, plus the same fields
+    the mock purchase endpoint for that purpose takes. test_outcome, if sent,
+    is ignored: Razorpay decides the outcome.
+    """
+
+    PURPOSES = ['membership', 'tickets', 'merch']
+
+    purpose = serializers.ChoiceField(choices=PURPOSES)
+
+    def validate(self, attrs):
+        # Imported here: members and events import this module's app.
+        from events.serializers import MAX_TICKETS_PER_ORDER
+        from members.models import MembershipPlan
+
+        class Membership(serializers.Serializer):
+            plan = serializers.PrimaryKeyRelatedField(queryset=MembershipPlan.objects.filter(active=True))
+
+        class Tickets(serializers.Serializer):
+            # The mock endpoint has the event in its URL; here it is
+            # optional and, if sent, must be the tier's event.
+            event = serializers.IntegerField(min_value=1, required=False)
+            tier = serializers.IntegerField(min_value=1)
+            quantity = serializers.IntegerField(min_value=1, max_value=MAX_TICKETS_PER_ORDER, default=1)
+
+        class Merch(MerchOrderSerializer):
+            test_outcome = None
+
+        by_purpose = {'membership': Membership, 'tickets': Tickets, 'merch': Merch}
+        fields = by_purpose[attrs['purpose']](data=self.initial_data)
+        fields.is_valid(raise_exception=True)
+        return {**attrs, **fields.validated_data}
+
+
+class RazorpayVerifySerializer(serializers.Serializer):
+    order_id = serializers.IntegerField(min_value=1)
+    razorpay_order_id = serializers.CharField(max_length=64)
+    razorpay_payment_id = serializers.CharField(max_length=64)
+    razorpay_signature = serializers.CharField(max_length=128)
+
+
+class RazorpayCancelSerializer(serializers.Serializer):
+    order_id = serializers.IntegerField(min_value=1)

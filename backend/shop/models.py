@@ -21,7 +21,21 @@ class Order(TimeStampedModel):
     discount = models.BigIntegerField(default=0)
     total = models.BigIntegerField()
     # The gateway's reference for the successful payment; empty until paid.
+    # Also set on an order flagged needs_refund, so the charge can be found.
     payment_ref = models.CharField(max_length=64, blank=True)
+    # ADDITIONS for the Razorpay gateway (beyond the plan, which has only
+    # the mock). All three stay empty/false on orders paid through the mock.
+    #
+    # Razorpay's id for this checkout ("order_..."), set once Razorpay has
+    # accepted the order.
+    razorpay_order_id = models.CharField(max_length=64, blank=True)
+    # The Idempotency-Key the checkout was started with. With Razorpay the
+    # Payment row appears only at verify time, so the key has to be
+    # remembered here until then; it becomes Payment.idempotency_key.
+    idempotency_key = models.CharField(max_length=64, blank=True)
+    # The buyer was charged but nothing could be delivered (sold out between
+    # checkout and payment). Someone has to refund payment_ref by hand.
+    needs_refund = models.BooleanField(default=False)
 
     class Meta:
         constraints = [
@@ -38,6 +52,19 @@ class Order(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(status__in=['pending', 'paid', 'cancelled']),
                 name='order_status_is_known',
+            ),
+            models.UniqueConstraint(
+                fields=['razorpay_order_id'], condition=~models.Q(razorpay_order_id=''),
+                name='order_razorpay_order_id_unique',
+            ),
+            models.UniqueConstraint(
+                fields=['idempotency_key'], condition=~models.Q(idempotency_key=''),
+                name='order_idempotency_key_unique',
+            ),
+            # Only an order that delivered nothing can be owed a refund.
+            models.CheckConstraint(
+                condition=models.Q(needs_refund=False) | models.Q(status='cancelled'),
+                name='order_needs_refund_only_when_cancelled',
             ),
         ]
 

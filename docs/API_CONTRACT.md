@@ -782,7 +782,8 @@ Returned by every purchase endpoint and by `GET /orders/me`.
 | `id` | integer | |
 | `status` | string | `pending`, `paid` or `cancelled`. |
 | `subtotal`, `discount`, `total` | integer | Paise. `total = subtotal - discount`, always. |
-| `payment_ref` | string | Gateway reference; `""` until paid. |
+| `payment_ref` | string | Gateway reference (`mock_...` or Razorpay's `pay_...`); `""` until paid. Also set when `needs_refund` is true. |
+| `needs_refund` | boolean | **Assumption.** `true` only on a `cancelled` Razorpay order whose buyer was charged but got nothing (sold out while paying). Always `false` for mock purchases. |
 | `created_at` | timestamp | |
 | `lines` | line[] | |
 
@@ -892,13 +893,188 @@ what was bought, so no further lookups are needed:
 ```json
 {
   "id": 121, "status": "paid", "subtotal": 160000, "discount": 32000, "total": 128000,
-  "payment_ref": "mock_5b1f0c3e9a7d4e2f8c6b1a0d9e8f7a6b", "created_at": "2026-10-10T18:20:00+05:30",
+  "payment_ref": "mock_5b1f0c3e9a7d4e2f8c6b1a0d9e8f7a6b", "needs_refund": false, "created_at": "2026-10-10T18:20:00+05:30",
   "lines": [
     { "id": 140, "kind": "merch", "label": "Skyline Hoodie · M", "plan": null, "tier": null, "product_size": 2, "qty": 1, "unit_price": 120000, "discount": 24000 },
     { "id": 141, "kind": "merch", "label": "Skyline T-Shirt · XL", "plan": null, "tier": null, "product_size": 8, "qty": 1, "unit_price": 40000, "discount": 8000 }
   ]
 }
 ```
+
+## Razorpay payments
+
+**Assumption:** everything in this section is beyond the backend plan, which
+specifies only the mock gateway. The mock endpoints (`POST /memberships`,
+`POST /events/{id}/tickets`, `POST /orders`) are unchanged and keep working
+whichever gateway is selected.
+
+The server picks the gateway with `PAYMENT_GATEWAY` (`mock`, the default, or
+`razorpay`, test-mode keys). If `razorpay` is set but either key is empty, the
+server uses `mock` and logs a warning.
+
+A Razorpay purchase takes two requests, with Razorpay's checkout between them:
+
+1. `POST /payments/razorpay/order`: the server validates and prices the
+   purchase and returns what the checkout needs.
+2. The browser opens Razorpay Checkout with those values. On success
+   Razorpay gives the browser `razorpay_order_id`, `razorpay_payment_id` and
+   `razorpay_signature`.
+3. `POST /payments/razorpay/verify` with those three values: the server
+   checks the signature and delivers the purchase.
+4. If the buyer closes the checkout instead: `POST /payments/razorpay/cancel`.
+
+Nothing is held between steps 1 and 3 (the same rule as the mock's `pending`
+outcome), so seats or stock can run out while the buyer is paying. See
+`sold_out` under verify.
+
+**Not built (future work):** webhooks, which need a public URL. If the browser
+never calls verify after a successful payment, the order stays `pending`.
+Refunds are not automated: a `needs_refund` order is refunded by hand in the
+Razorpay dashboard, using its `payment_ref`.
+
+### GET /payments/config
+
+- **Who:** Any logged-in user.
+
+Response `200`:
+
+```json
+{ "gateway": "razorpay", "key_id": "rzp_test_XXXXXXXXXXXXXX" }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `gateway` | string | `mock` or `razorpay`: which purchase flow the frontend should use. |
+| `key_id` | string or `null` | Optional for clients (the order response carries the key as `key`). Razorpay's public key id; `null` when `gateway` is `mock`. The key secret is never returned by any endpoint. |
+
+Errors: `401 not_authenticated`.
+
+### POST /payments/razorpay/order
+
+Start a checkout.
+
+- **Who:** Any logged-in user. The buyer is the token's user.
+- **Header:** `Idempotency-Key`, as for `POST /memberships`. Use a new key for
+  every checkout attempt.
+- **Validation and price:** the same code as the mock purchase of that purpose:
+  sales window, seats, stock, product active, member ticket price, member
+  merch discount. Any price or total in the body is ignored.
+- **Database:** our order is saved as `pending` with its lines and the
+  Razorpay order id. No payment, ticket, membership, stock change or ledger
+  entry yet.
+
+Request: `purpose`, plus the fields of the mock endpoint for that purpose.
+`test_outcome` is ignored.
+
+| `purpose` | Other fields |
+|---|---|
+| `membership` | `plan` (integer, required) |
+| `tickets` | `tier` (integer, required), `quantity` (1 to 10, default 1), `event` (integer, optional; if sent it must be the tier's event) |
+| `merch` | `items` (required), exactly as in `POST /orders` |
+
+```json
+{ "purpose": "tickets", "event": 3, "tier": 7, "quantity": 2 }
+```
+
+Response `201` (or `200` when the same key already started this same
+checkout and it is still open; nothing new is created):
+
+```json
+{
+  "order_id": 131,
+  "razorpay_order_id": "order_QxT3lB0nH1kP9a",
+  "key": "rzp_test_XXXXXXXXXXXXXX",
+  "amount": 160000,
+  "currency": "INR",
+  "name": "Skyline Student Association",
+  "description": "Spring Gala · General x2",
+  "prefill": { "name": "Priya Nair", "email": "priya@example.com" }
+}
+```
+
+`key` is Razorpay's public key id (the same value as `key_id` in
+`GET /payments/config`), named as Razorpay Checkout expects it. `amount` is
+in paise and is what Razorpay will charge. `description` is the
+order's line labels (with ` x<qty>` for tickets and merch), comma separated.
+
+Errors:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `idempotency_key_required` | Header missing or malformed. |
+| 400 | `validation_error` | Missing or unknown `purpose`; missing or unknown `plan`; `tier` missing, unknown, in a draft event, or not in `event`; bad `items`. |
+| 400 | `amount_too_small` | Total under 100 paise, Razorpay's minimum. |
+| 409 | `sales_closed`, `sold_out` | Tickets, as for `POST /events/{id}/tickets`. |
+| 409 | `out_of_stock`, `product_unavailable` | Merch, as for `POST /orders`. |
+| 409 | `idempotency_key_reused` | The key belongs to another user, a different purchase, a mock payment, or a checkout that is already paid or cancelled. |
+| 409 | `gateway_not_enabled` | The server is on the mock gateway. Use the mock endpoints. |
+| 502 | `gateway_unavailable` | Razorpay could not be reached or refused the request. Nobody was charged; the order is cancelled and the same key may be sent again. |
+
+### POST /payments/razorpay/verify
+
+Prove the payment and deliver the purchase.
+
+- **Who:** The buyer of the order only. Anyone else gets `404`, the same as
+  for an order that does not exist.
+- **Signature:** the server computes HMAC-SHA256 of
+  `razorpay_order_id + "|" + razorpay_payment_id` with the key secret, using
+  the Razorpay order id it stored in step 1, and compares in constant time.
+- **Database:** on a match, the same success path as the mock, in one
+  transaction: payment (`gateway_ref` = `razorpay_payment_id`), order `paid`,
+  then membership, or tickets and seats, or stock and stock movements, and the
+  ledger entry. If any part fails, none of it is saved.
+
+Request (all required):
+
+```json
+{
+  "order_id": 131,
+  "razorpay_order_id": "order_QxT3lB0nH1kP9a",
+  "razorpay_payment_id": "pay_QxT4w2e8ZrUu1c",
+  "razorpay_signature": "9f6c...64 hex characters...b1"
+}
+```
+
+Response `201`: exactly the body of the mock endpoint for that purpose
+(`{order, payment, membership}`, `{order, payment, tickets}` or
+`{order, payment}`), with `order.status` `paid`. Sending the same payment
+again returns `200` with the same body and creates nothing.
+
+**Assumption:** a genuine payment for an order the buyer has already
+cancelled (the two calls can race when the checkout closes) is still
+delivered, since Razorpay has the money.
+
+Errors:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `validation_error` | A field is missing. |
+| 400 | `invalid_signature` | The signature does not match, or `razorpay_order_id` is not this order's. Nothing changes; the order stays as it was and can still be verified with the right values. |
+| 404 | `not_found` | No such order, another user's order, or an order that was not started through Razorpay. |
+| 409 | `sold_out` | The seats or stock (any one line) were gone by the time the payment arrived. Nothing is delivered; the order becomes `cancelled` with `needs_refund: true` and `payment_ref` set, and an audit row `order.refund_due` is written. Repeating the call gives the same `409`. Used for merch too (not `out_of_stock`). |
+| 409 | `order_already_paid` | The order was already paid by a different payment id. |
+| 409 | `gateway_not_enabled` | The server is on the mock gateway. |
+
+### POST /payments/razorpay/cancel
+
+The buyer closed the checkout without paying.
+
+- **Who:** The buyer of the order only (`404` otherwise).
+- **Database:** the order goes from `pending` to `cancelled`. Nothing else
+  changes. Calling it again returns the same `200`.
+
+Request: `{ "order_id": 131 }`
+
+Response `200`: `{ "order": { ...order object, "status": "cancelled" } }`
+
+Errors:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `validation_error` | `order_id` missing. |
+| 404 | `not_found` | No such order, another user's, or not a Razorpay order. |
+| 409 | `order_already_paid` | The order is `paid`; it stays paid. Safe to ignore if the checkout's close event fires after a successful verify. |
+| 409 | `gateway_not_enabled` | The server is on the mock gateway. |
 
 ## POST /products, PATCH /products/{id}, POST /products/{id}/restock
 
@@ -1392,7 +1568,7 @@ exactly that action (for example `?action=expense.approved`).
 |---|---|---|
 | `id` | integer | |
 | `actor` | object or `null` | `{ "id", "name" }` of who did it; `null` if not recorded. |
-| `action` | string | One of: `role.assigned`, `stock.restocked`, `expense.approved`, `expense.rejected`, `expense.paid`, `savefile.created`, `savefile.updated`. |
+| `action` | string | One of: `role.assigned`, `stock.restocked`, `order.refund_due`, `expense.approved`, `expense.rejected`, `expense.paid`, `savefile.created`, `savefile.updated`. |
 | `object_type` | string | The kind of record, as `app.model`. |
 | `object_id` | integer | Its id. |
 | `before`, `after` | object or `null` | The changed values before and after. |
