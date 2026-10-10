@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail
 
+from common.validation import MAX_AMOUNT
+
 from .models import ExpenseRequest, LedgerEntry, LedgerLine
 
 # Plan: "Accept images or PDFs for receipts, with a size limit and type check."
@@ -12,6 +14,14 @@ RECEIPT_SIGNATURES = {
     'png': [b'\x89PNG\r\n\x1a\n'],
     'jpg': [b'\xff\xd8\xff'],
     'jpeg': [b'\xff\xd8\xff'],
+}
+# extension -> the Content-Type the upload must declare. Three checks in
+# all (name, declared type, actual bytes); a file has to pass every one.
+RECEIPT_CONTENT_TYPES = {
+    'pdf': {'application/pdf'},
+    'png': {'image/png'},
+    'jpg': {'image/jpeg'},
+    'jpeg': {'image/jpeg'},
 }
 
 
@@ -52,7 +62,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
 
 class ExpenseSubmitSerializer(serializers.ModelSerializer):
-    amount = serializers.IntegerField(min_value=1)
+    amount = serializers.IntegerField(min_value=1, max_value=MAX_AMOUNT)
+    description = serializers.CharField(max_length=500, min_length=3)
 
     class Meta:
         model = ExpenseRequest
@@ -68,6 +79,11 @@ class ExpenseSubmitSerializer(serializers.ModelSerializer):
             )
         if upload.size > MAX_RECEIPT_BYTES:
             raise serializers.ValidationError(ErrorDetail('The receipt must be 5 MB or smaller.', code='file_too_large'))
+        if (upload.content_type or '').split(';')[0].strip().lower() not in RECEIPT_CONTENT_TYPES[extension]:
+            raise serializers.ValidationError(ErrorDetail(
+                f'A .{extension} file must be sent as {sorted(RECEIPT_CONTENT_TYPES[extension])[0]}.',
+                code='content_type_mismatch',
+            ))
         start = upload.read(8)
         upload.seek(0)
         if not any(start.startswith(signature) for signature in RECEIPT_SIGNATURES[extension]):

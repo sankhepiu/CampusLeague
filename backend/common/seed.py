@@ -11,8 +11,10 @@ What is NOT genuine, and why:
   - Membership dates are shifted after purchase to create lapsed and
     expiring members. The ledger entry keeps today's date; the ledger is
     append-only and has no way to backdate.
-  - Events, tiers, plans, products and role assignments are created
-    directly; there is no service function for them, only API validation.
+  - Events, tiers, plans, products, coupons and the leaders' role
+    assignments are created directly; there is no service function for
+    them, only API validation. (The leaders' roles skip the invite step a
+    real nomination goes through; the one pending invite is a real one.)
   - Expense requests are created directly with a generated placeholder
     receipt image (the API's only extra step is validating the upload);
     every approval, rejection and payout goes through finance.expenses.
@@ -34,13 +36,14 @@ from django.core.files.storage import default_storage
 from django.db import connection, transaction
 from django.utils import timezone
 
-from accounts.models import RoleAssignment
+from accounts import roles
+from accounts.models import RoleAssignment, RoleInvite
 from common import pixel_art
 from audit.models import AuditLog
 from comms import services as comms
 from comms.models import Announcement, AnnouncementDelivery
 from events import tickets
-from events.models import CheckIn, Event, Ticket, TicketTier
+from events.models import CheckIn, Event, Ticket, TicketPass, TicketTier
 from finance import expenses
 from insights import savefiles
 from insights.models import SaveFile
@@ -48,7 +51,9 @@ from finance.models import Approval, ExpenseRequest, LedgerEntry, LedgerLine
 from members.models import Membership, MembershipPlan
 from members.services import add_months
 from shop import stock
-from shop.models import Order, OrderLine, Payment, Product, ProductSize, StockMovement
+from shop.models import (
+    Coupon, CouponRedemption, Order, OrderLine, Payment, Product, ProductSize, StockMovement,
+)
 from shop.payments import purchase_membership, purchase_merch, purchase_tickets
 from volunteering.models import Fundraiser, FundraiserSale, Task, TaskAssignment
 from volunteering.services import record_sale
@@ -64,9 +69,9 @@ DOMAIN = 'skyline.test'
 # accounts is reference data created by a migration.
 RESET_MODELS = [
     AuditLog, SaveFile, AnnouncementDelivery, Announcement, Approval, ExpenseRequest, FundraiserSale,
-    TaskAssignment, Task, Fundraiser, CheckIn, Ticket, LedgerLine, LedgerEntry,
-    StockMovement, Payment, OrderLine, Order, ProductSize, Product,
-    TicketTier, Event, Membership, MembershipPlan, RoleAssignment, User,
+    TaskAssignment, Task, Fundraiser, CheckIn, Ticket, TicketPass, LedgerLine, LedgerEntry,
+    StockMovement, CouponRedemption, Payment, OrderLine, Order, Coupon, ProductSize, Product,
+    TicketTier, Event, Membership, MembershipPlan, RoleInvite, RoleAssignment, User,
 ]
 
 LEADERS = [
@@ -225,7 +230,7 @@ def seed():
     freshers = Event.objects.create(
         title='Freshers Night', description='Welcome party for the new batch.', venue='Open Air Theatre',
         starts_at=now - timedelta(days=45), ends_at=now - timedelta(days=45) + timedelta(hours=4),
-        capacity_total=60, status=Event.Status.ON_SALE, budget_amount=1200000,
+        capacity_total=60, status=Event.Status.ON_SALE, budget_amount=1200000, created_by=leaders['events'],
     )
     freshers_tier = TicketTier.objects.create(
         event=freshers, name='General', public_price=30000, member_price=20000, capacity=60,
@@ -240,7 +245,7 @@ def seed():
         title='Spring Gala', description='The annual formal: dinner, music and awards.',
         venue='Skyline Convention Hall',
         starts_at=now + timedelta(days=30), ends_at=now + timedelta(days=30) + timedelta(hours=5),
-        capacity_total=50, status=Event.Status.ON_SALE, budget_amount=3000000,
+        capacity_total=50, status=Event.Status.ON_SALE, budget_amount=3000000, created_by=leaders['events'],
     )
     gala_general = TicketTier.objects.create(
         event=gala, name='General', public_price=80000, member_price=60000, capacity=40,
@@ -252,26 +257,58 @@ def seed():
     _buy_tickets(gala_general, active[:21] + lapsed[:2] + role_accounts, 'gala-general')
     _buy_tickets(gala_vip, active[26:29], 'gala-vip')
 
-    # A smaller upcoming event, nothing sold yet ---------------------------
+    # A smaller upcoming event: one group of ten, three already inside ------
     meetup = Event.objects.create(
         title='Board Games Meetup', description='Casual evening, snacks included.',
         venue='Student Centre, Room 2',
         starts_at=now + timedelta(days=10), ends_at=now + timedelta(days=10) + timedelta(hours=3),
-        capacity_total=25, status=Event.Status.ON_SALE, budget_amount=150000,
+        capacity_total=25, status=Event.Status.ON_SALE, budget_amount=150000, created_by=leaders['events'],
     )
-    TicketTier.objects.create(event=meetup, name='Entry', public_price=10000, member_price=5000, capacity=25)
+    meetup_entry = TicketTier.objects.create(
+        event=meetup, name='Entry', public_price=10000, member_price=5000, capacity=25,
+    )
+    # member01 books for a group of ten: ten tickets, one pass, one QR code.
+    # Three of the group have been let in (early set-up crew); the other
+    # seven can be admitted live from the scanner.
+    group = purchase_tickets(
+        user=members[0], tier_id=meetup_entry.pk, quantity=10, outcome='success',
+        idempotency_key='seed-meetup-group-000',
+    )
+    group_pass = TicketPass.objects.get(order=group.order)
+    tickets.scan_pass(operator=leaders['events'], token=group_pass.qr_token, count=3, event_id=meetup.pk)
 
     # Merchandise ----------------------------------------------------------
-    # (name, price, description, picture, {size: (restocked, sold)})
+    # (name, price, description, picture, category, sale %, {size: (restocked, sold)})
+    # Clothing comes in four sizes; everything else has the single size ONE.
+    # Only the hoodie and the T-shirt have sales history; the other eight
+    # are stocked and waiting. Two are on sale.
     catalogue = [
-        ('Skyline Hoodie', 120000, 'Heavyweight fleece with the club crest.', pixel_art.HOODIE_PNG,
+        ('Skyline Hoodie', 120000, 'Heavyweight fleece with the club crest.', pixel_art.HOODIE_PNG, 'apparel', 0,
          {'S': (10, 2), 'M': (8, 3), 'L': (8, 2), 'XL': (3, 2)}),       # XL: 1 left
-        ('Skyline T-Shirt', 40000, 'Cotton tee, club colours.', pixel_art.T_SHIRT_PNG,
+        ('Skyline T-Shirt', 40000, 'Cotton tee, club colours.', pixel_art.T_SHIRT_PNG, 'apparel', 0,
          {'S': (20, 0), 'M': (20, 4), 'L': (15, 2), 'XL': (10, 0)}),      # S: the role accounts buy 5
+        ('Skyline Cap', 35000, 'Six-panel cap with an embroidered crest.', pixel_art.CAP_PNG, 'apparel', 20,
+         {'ONE': (25, 0)}),                                              # on sale
+        ('Canvas Tote', 25000, 'Sturdy tote for books and groceries.', pixel_art.TOTE_PNG, 'accessories', 0,
+         {'ONE': (30, 0)}),
+        ('Sticker Pack', 8000, 'Six vinyl stickers for laptops and bottles.', pixel_art.STICKERS_PNG, 'stationery', 0,
+         {'ONE': (60, 0)}),
+        ('Campus Mug', 30000, 'Ceramic mug, 330 ml.', pixel_art.MUG_PNG, 'drinkware', 15,
+         {'ONE': (20, 0)}),                                              # on sale
+        ('Ruled Notebook', 15000, 'A5, 120 ruled pages, hard cover.', pixel_art.NOTEBOOK_PNG, 'stationery', 0,
+         {'ONE': (40, 0)}),
+        ('Club Lanyard', 10000, 'Woven lanyard with a card holder.', pixel_art.LANYARD_PNG, 'accessories', 0,
+         {'ONE': (50, 0)}),
+        ('Enamel Pin', 12000, 'Gold-tone crest pin.', pixel_art.PIN_PNG, 'accessories', 0,
+         {'ONE': (45, 0)}),
+        ('Water Bottle', 45000, 'Steel bottle, 750 ml, keeps drinks cold.', pixel_art.BOTTLE_PNG, 'drinkware', 0,
+         {'ONE': (18, 0)}),
     ]
     shoppers = iter(active * 2)
-    for name, price, description, picture, sizes in catalogue:
-        product = Product.objects.create(name=name, base_price=price, description=description)
+    for name, price, description, picture, category, sale_pct, sizes in catalogue:
+        product = Product.objects.create(
+            name=name, base_price=price, description=description, category=category, sale_pct=sale_pct,
+        )
         # A fixed file name per product. Any copy left by an earlier seed is
         # removed first, otherwise storage would add a random suffix.
         image_name = f"products/{name.lower().replace(' ', '-')}.png"
@@ -291,6 +328,19 @@ def seed():
             user=leader, items={tee_small.pk: 1}, outcome='success',
             idempotency_key=f'seed-leader-merch-{number:02}',
         )
+
+    # Coupons --------------------------------------------------------------
+    Coupon.objects.create(code='WELCOME10', kind='percent', value=10, applies_to='membership')
+    Coupon.objects.create(code='GALA50', kind='flat', value=5000, min_order=20000, applies_to='tickets')
+    Coupon.objects.create(
+        code='MERCH20', kind='percent', value=20, max_discount=15000, usage_limit=5, applies_to='merch',
+    )
+
+    # One nomination waiting for an answer: accept or decline it as member05
+    roles.invite(
+        inviter=leaders['president'], user=members[4], role='event_manager',
+        term_start=today, term_end=today + timedelta(days=275), notify=False,
+    )
 
     # Announcements --------------------------------------------------------
     past_posts = [

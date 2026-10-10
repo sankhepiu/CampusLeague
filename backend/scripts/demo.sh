@@ -6,11 +6,15 @@
 # tokens, single check-in, stock that cannot go negative, no self-approval,
 # and a ledger that reconciles and can be traced.
 #
-# Run it on a FRESH seed (it buys the last hoodie XL and uses up a ticket):
+# Run it on a FRESH seed (it buys the last hoodie XL, uses up a ticket and
+# accepts the pending role invite):
 #
 #     python manage.py seed_demo --reset
-#     python manage.py runserver            # in another terminal
+#     PAYMENT_GATEWAY=mock python manage.py runserver     # in another terminal
 #     scripts/demo.sh
+#
+# The server must be on the mock gateway: with Razorpay configured the
+# purchase steps are refused (409 gateway_not_enabled), as they should be.
 #
 # Options (environment variables):
 #     BASE           where the API is; default http://127.0.0.1:8000
@@ -104,6 +108,55 @@ FIRST_SCAN="$(field "d['checked_in_at']")"
 request POST /checkin "$DOOR" "{\"token\":\"$QR\"}"
 step 200 "The same ticket is scanned a second time" \
     "'result: %s, original scan %s by %s (kept: %s)' % (d['result'], d['checked_in_at'], d['checked_in_by'], d['checked_in_at'] == '$FIRST_SCAN')"
+
+echo
+echo "== Group pass: one QR code for ten people, used up seat by seat =="
+
+GROUP="$(login member01)" || exit 2
+request GET /tickets/me "$GROUP"
+PASS_QR="$(field "[p['qr_token'] for p in d['results'] if p['quantity'] == 10][0]")"
+step 200 "member01's passes: one booking of ten for the Board Games Meetup" \
+    "'%s: %d tickets, %d admitted, %d remaining, one QR code' % ([p['event']['name'] for p in d['results'] if p['quantity'] == 10][0], [p['quantity'] for p in d['results'] if p['quantity'] == 10][0], [p['admitted'] for p in d['results'] if p['quantity'] == 10][0], [p['remaining'] for p in d['results'] if p['quantity'] == 10][0])"
+
+request POST /checkin "$DOOR" "{\"token\":\"$PASS_QR\",\"count\":2}"
+step 200 "Event manager scans the pass for two more of the group" \
+    "'result: %s, %d of %d inside, %d remaining' % (d['result'], d['admitted'], d['total'], d['remaining'])"
+
+request POST /checkin "$DOOR" "{\"token\":\"$PASS_QR\",\"count\":6}"
+step 400 "The scanner asks to admit six, but only five are left" "'%s: %s' % (d['code'], d['message'])"
+
+echo
+echo "== Coupons: checked on the server, never below one rupee =="
+
+request POST /coupons/validate "$MEMBER" '{"code":"welcome10","applies_to":"membership","amount":50000}'
+step 200 "Member asks what WELCOME10 takes off a Rs 500 membership" \
+    "'valid: %s, discount %s paise, to pay %s paise' % (d['valid'], d['discount'], d['final_amount'])"
+
+request POST /coupons/validate "$MEMBER" '{"code":"WELCOME10","applies_to":"tickets","amount":50000}'
+step 200 "The same code on tickets" "'valid: %s (%s)' % (d['valid'], d['reason'])"
+
+request POST "/events/$GALA/tickets" "$MEMBER" "{\"tier\":$TIER,\"coupon\":\"GALA50\"}" "demo-coupon-$RUN"
+step 201 "Member buys another Gala ticket with GALA50 (Rs 50 off)" \
+    "'list %s, coupon %s took off %s, charged %s paise' % (d['order']['subtotal'], d['order']['coupon'], d['order']['coupon_discount'], d['order']['total'])"
+
+echo
+echo "== Roles: a nomination grants nothing until the nominee accepts =="
+
+NOMINEE="$(login member05)" || exit 2
+request POST /events "$NOMINEE" '{}'
+step 403 "member05, nominated as event manager, tries to create an event" "'refused: ' + d['code']"
+
+request GET "/roles/invites?status=pending" "$NOMINEE"
+INVITE="$(field "d['results'][0]['id']")"
+request POST "/roles/invites/$INVITE/accept" "$TREASURER"
+step 404 "The treasurer tries to accept member05's invite" "'refused: ' + d['code']"
+
+request POST "/roles/invites/$INVITE/accept" "$NOMINEE"
+step 200 "member05 accepts their own invite" \
+    "'invite %s as %s, invited by %s' % (d['status'], d['role'], d['invited_by']['name'])"
+
+request POST /events "$NOMINEE" '{}'
+step 400 "member05 tries again: now allowed in, and told what is missing" "'%s: %s' % (d['code'], ', '.join(sorted(d['fields'])))"
 
 echo
 echo "== Shop: stock is taken atomically and stops at zero =="

@@ -24,6 +24,11 @@ class Event(TimeStampedModel):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
     # Paise. Feeds event P&L.
     budget_amount = models.BigIntegerField(default=0)
+    # ADDITION to the plan's field list: who created the event, shown as its
+    # organiser. Empty for events made before this field existed.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name='+',
+    )
 
     class Meta:
         ordering = ['starts_at', 'id']
@@ -80,8 +85,45 @@ class TicketTier(TimeStampedModel):
     def seats_left(self):
         return self.capacity - self.sold_count
 
+    def sale_is_open(self, now):
+        """The event is on sale and now is inside this tier's sale window.
+        Says nothing about seats: a sold-out tier can still be "open".
+        """
+        return (
+            self.event.status == Event.Status.ON_SALE
+            and not (self.sale_opens and now < self.sale_opens)
+            and not (self.sale_closes and now >= self.sale_closes)
+        )
+
     def __str__(self):
         return f'{self.event}: {self.name}'
+
+
+class TicketPass(TimeStampedModel):
+    """ASSUMPTION (beyond the plan): one QR code for all the tickets bought
+    together. An order of N seats in a tier still creates N Ticket rows, so
+    seat counting is unchanged; the pass groups them and carries one signed
+    token. Each scan of the pass admits the next ticket not yet used.
+
+    There is no "admitted" counter here on purpose: it is counted from the
+    tickets, so it cannot disagree with them.
+    """
+
+    order = models.ForeignKey('shop.Order', on_delete=models.PROTECT, related_name='ticket_passes')
+    tier = models.ForeignKey(TicketTier, on_delete=models.PROTECT, related_name='passes')
+    event = models.ForeignKey(Event, on_delete=models.PROTECT, related_name='passes')
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='ticket_passes')
+    # Signed token shown as the QR code. See events.tickets.sign_pass.
+    qr_token = models.CharField(max_length=255)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        constraints = [
+            models.UniqueConstraint(fields=['order', 'tier'], name='ticket_pass_one_per_order_and_tier'),
+        ]
+
+    def __str__(self):
+        return f'Pass #{self.pk} ({self.tier})'
 
 
 class Ticket(TimeStampedModel):
@@ -99,6 +141,11 @@ class Ticket(TimeStampedModel):
     tier = models.ForeignKey(TicketTier, on_delete=models.PROTECT, related_name='tickets')
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='tickets')
     order = models.ForeignKey('shop.Order', on_delete=models.PROTECT, related_name='tickets')
+    # The group pass this seat belongs to. Every ticket has one; nullable
+    # only so the column could be added to a table that already had rows.
+    ticket_pass = models.ForeignKey(
+        TicketPass, null=True, blank=True, on_delete=models.PROTECT, related_name='tickets',
+    )
     # Short code for typing in when the camera scanner fails.
     code = models.CharField(max_length=12, unique=True)
     # Signed token shown as the QR code. See events.tickets.sign_ticket.

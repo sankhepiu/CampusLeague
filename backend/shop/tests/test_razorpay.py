@@ -21,7 +21,7 @@ from finance.services import account_balance
 from members.models import Membership, MembershipPlan
 from shop import razorpay
 from shop.models import Order, Payment, StockMovement
-from shop.payments import tickets_basket
+from shop.payments import IdempotencyConflict, purchase_membership, purchase_merch, tickets_basket
 from shop.tests.helpers import make_product, size_of
 
 User = get_user_model()
@@ -267,12 +267,13 @@ class StartCheckoutTests(RazorpayTestCase):
         checkout = self.start().json()
 
         self.assert_error(self.start({'purpose': 'membership', 'plan': other_plan.pk}), 409, 'idempotency_key_reused')
-        # The mock endpoints refuse the key too: it is reserved for the
-        # payment this checkout will create.
-        response = self.client.post(
-            '/api/memberships', {'plan': self.plan.pk}, format='json', HTTP_IDEMPOTENCY_KEY='razorpay-key-0001',
-        )
-        self.assert_error(response, 409, 'idempotency_key_reused')
+        # The mock gateway refuses the key too: it is reserved for the
+        # payment this checkout will create. (Called as a service: the mock
+        # endpoints themselves are closed while Razorpay is on.)
+        with self.assertRaises(IdempotencyConflict):
+            purchase_membership(
+                user=self.user, plan=self.plan, outcome='success', idempotency_key='razorpay-key-0001',
+            )
 
         self.login_as(self.make_user(email='arjun@example.com', college_id='SSA-002'))
         self.assert_error(self.start(), 409, 'idempotency_key_reused')
@@ -284,10 +285,7 @@ class StartCheckoutTests(RazorpayTestCase):
         self.assertEqual(Payment.objects.count(), 1)
 
     def test_a_key_already_used_by_a_mock_purchase_is_refused(self):
-        response = self.client.post(
-            '/api/memberships', {'plan': self.plan.pk}, format='json', HTTP_IDEMPOTENCY_KEY='razorpay-key-0001',
-        )
-        self.assertEqual(response.status_code, 201)
+        purchase_membership(user=self.user, plan=self.plan, outcome='success', idempotency_key='razorpay-key-0001')
         self.assert_error(self.start(), 409, 'idempotency_key_reused')
         self.assertEqual(self.gateway.requests, [])
 
@@ -367,8 +365,10 @@ class VerifyTests(RazorpayTestCase):
         response = self.verify(checkout)
         self.assertEqual(response.status_code, 201, response.content)
         body = response.json()
-        self.assertEqual(set(body), {'order', 'payment', 'tickets'})
+        # The same shape as POST /events/{id}/tickets.
+        self.assertEqual(set(body), {'order', 'payment', 'tickets', 'pass'})
         self.assertEqual(len(body['tickets']), 2)
+        self.assertEqual((body['pass']['quantity'], body['pass']['remaining']), (2, 2))
         self.assertEqual(Ticket.objects.filter(owner=self.user, price_paid=80000).count(), 2)
         tier.refresh_from_db()
         self.assertEqual(tier.sold_count, 2)
@@ -480,14 +480,9 @@ class VerifyTests(RazorpayTestCase):
         medium, large = size_of(product, 'M'), size_of(product, 'L')
         items = [{'product_size': medium.pk, 'quantity': 2}, {'product_size': large.pk, 'quantity': 1}]
         checkout = self.start({'purpose': 'merch', 'items': items}).json()
-        # The last L is sold to someone else through the mock gateway.
-        self.login_as(self.make_user(email='arjun@example.com', college_id='SSA-002'))
-        sold = self.client.post(
-            '/api/orders', {'items': [{'product_size': large.pk, 'quantity': 1}]}, format='json',
-            HTTP_IDEMPOTENCY_KEY='mock-key-0001',
-        )
-        self.assertEqual(sold.status_code, 201)
-        self.login_as(self.user)
+        # The last L is sold to someone else meanwhile.
+        other = self.make_user(email='arjun@example.com', college_id='SSA-002')
+        purchase_merch(user=other, items={large.pk: 1}, outcome='success', idempotency_key='mock-key-0001')
 
         self.assert_error(self.verify(checkout), 409, 'sold_out')
         order = Order.objects.get(pk=checkout['order_id'])
@@ -513,12 +508,9 @@ class VerifyTests(RazorpayTestCase):
         self.assert_error(self.verify(checkout), 401, 'not_authenticated')
 
     def test_an_order_from_the_mock_gateway_cannot_be_verified_or_cancelled(self):
-        response = self.client.post(
-            '/api/memberships', {'plan': self.plan.pk, 'test_outcome': 'pending'}, format='json',
-            HTTP_IDEMPOTENCY_KEY='mock-key-0001',
-        )
-        self.assertEqual(response.status_code, 202)
-        order_id = response.json()['order']['id']
+        order_id = purchase_membership(
+            user=self.user, plan=self.plan, outcome='pending', idempotency_key='mock-key-0001',
+        ).order.pk
         fake = {'order_id': order_id, 'razorpay_order_id': ''}
         body = {'order_id': order_id, 'razorpay_order_id': 'order_X', 'razorpay_payment_id': 'pay_X',
                 'razorpay_signature': sign('order_X', 'pay_X')}
@@ -597,8 +589,41 @@ class MockGatewayStillWorksTests(RazorpayTestCase):
         self.assertEqual(self.gateway.requests, [])
 
     @RAZORPAY_ON
+    def test_mock_endpoints_are_closed_while_razorpay_is_on(self):
+        tier = make_tier(make_event())
+        size = size_of(make_product(stock_by_size={'M': 2}), 'M')
+        attempts = [
+            ('/api/memberships', {'plan': self.plan.pk}),
+            (f'/api/events/{tier.event_id}/tickets', {'tier': tier.pk}),
+            ('/api/orders', {'items': [{'product_size': size.pk, 'quantity': 1}]}),
+        ]
+        for outcome in ['success', 'failure', 'pending']:
+            for number, (url, body) in enumerate(attempts):
+                with self.subTest(url=url, outcome=outcome):
+                    response = self.client.post(
+                        url, {**body, 'test_outcome': outcome}, format='json',
+                        HTTP_IDEMPOTENCY_KEY=f'closed-{outcome}-{number}',
+                    )
+                    self.assert_error(response, 409, 'gateway_not_enabled')
+        # Refused before anything else is looked at, even the key.
+        self.assert_error(self.client.post('/api/memberships', {}, format='json'), 409, 'gateway_not_enabled')
+        self.assertEqual(Order.objects.count(), 0)
+        self.assert_nothing_delivered()
+        size.refresh_from_db()
+        tier.refresh_from_db()
+        self.assertEqual((size.stock, tier.sold_count), (2, 0))
+        # Reading is unaffected, and so is the Razorpay flow.
+        self.assertEqual(self.client.get('/api/plans').status_code, 200)
+        self.assertEqual(self.start().status_code, 201)
+
+    def test_razorpay_without_keys_leaves_the_mock_endpoints_open(self):
+        with override_settings(PAYMENT_GATEWAY='razorpay', RAZORPAY_KEY_ID='', RAZORPAY_KEY_SECRET=''):
+            with self.assertLogs('shop.razorpay', level='WARNING'):
+                self.assertEqual(self.buy_with_mock().status_code, 201)
+
+    @RAZORPAY_ON
     def test_mock_and_razorpay_purchases_reconcile_together(self):
-        self.assertEqual(self.buy_with_mock().status_code, 201)
+        purchase_membership(user=self.user, plan=self.plan, outcome='success', idempotency_key='mock-key-0001')
         self.assertEqual(self.verify(self.start().json()).status_code, 201)
         self.assertEqual(Payment.objects.count(), 2)
         self.assertEqual(account_balance('1000'), 100000)

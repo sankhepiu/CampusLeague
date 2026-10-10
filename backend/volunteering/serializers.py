@@ -2,6 +2,10 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail
 
+from django.utils import timezone
+
+from common.validation import MAX_AMOUNT, MAX_DESCRIPTION, MAX_TITLE
+
 from . import services
 from .models import Fundraiser, FundraiserSale, Task
 
@@ -28,6 +32,9 @@ class TaskSerializer(serializers.ModelSerializer):
 
 
 class TaskWriteSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(max_length=MAX_TITLE)
+    description = serializers.CharField(max_length=MAX_DESCRIPTION, allow_blank=True, required=False)
+
     class Meta:
         model = Task
         # status is changed through PATCH /tasks/{id}/status only.
@@ -41,6 +48,11 @@ class TaskWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {'fundraiser': error('A task belongs to exactly one fundraiser or one event.', 'one_parent_required')}
             )
+        # ASSUMPTION: a due date being set or changed cannot be in the past.
+        # An untouched old due date does not block other edits.
+        due = attrs.get('due_date')
+        if due and due != getattr(task, 'due_date', None) and due < timezone.localdate():
+            raise serializers.ValidationError({'due_date': error('The due date cannot be in the past.', 'in_past')})
         return attrs
 
 
@@ -71,7 +83,8 @@ class FundraiserSerializer(serializers.ModelSerializer):
 
 
 class FundraiserWriteSerializer(serializers.ModelSerializer):
-    goal_amount = serializers.IntegerField(min_value=1)
+    title = serializers.CharField(max_length=MAX_TITLE)
+    goal_amount = serializers.IntegerField(min_value=1, max_value=MAX_AMOUNT)
 
     class Meta:
         model = Fundraiser
@@ -87,7 +100,8 @@ class FundraiserWriteSerializer(serializers.ModelSerializer):
 
 
 class SaleSerializer(serializers.ModelSerializer):
-    amount = serializers.IntegerField(min_value=1)
+    amount = serializers.IntegerField(min_value=1, max_value=MAX_AMOUNT)
+    note = serializers.CharField(max_length=200, allow_blank=True, required=False)
 
     class Meta:
         model = FundraiserSale

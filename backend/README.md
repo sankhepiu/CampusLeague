@@ -156,8 +156,11 @@ RAZORPAY_KEY_ID=...        # a test key, starting rzp_test_
 RAZORPAY_KEY_SECRET=...
 ```
 
-If either key is blank the server logs a warning and uses the mock. The mock
-endpoints stay open in both modes, so do not use live keys with this build.
+If either key is blank the server logs a warning and uses the mock. While
+Razorpay is on, the mock purchase endpoints refuse every request
+(`409 gateway_not_enabled`); the test suite always runs on the mock.
+`scripts/demo.sh` buys through the mock endpoints, so run it against a server
+started with `PAYMENT_GATEWAY=mock`.
 There are no webhooks and no automatic refunds yet; see "Razorpay payments"
 in `docs/API_CONTRACT.md`.
 

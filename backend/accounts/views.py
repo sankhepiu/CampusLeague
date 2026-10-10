@@ -3,7 +3,8 @@ from django.db import transaction
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.exceptions import APIException
-from rest_framework.generics import ListCreateAPIView
+from django.shortcuts import get_object_or_404
+from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -11,12 +12,12 @@ from rest_framework.views import APIView
 
 from audit import services as audit
 
-from . import verification
-from .models import RoleAssignment
+from . import roles, verification
+from .models import RoleAssignment, RoleInvite
 from .permissions import has_role
 from .serializers import (
-    LoginSerializer, ResendCodeSerializer, RoleAssignmentSerializer, SignupSerializer, UserSerializer,
-    VerifyEmailSerializer,
+    LoginSerializer, ResendCodeSerializer, RoleAssignmentSerializer, RoleInviteCreateSerializer,
+    RoleInviteSerializer, SignupSerializer, UserSerializer, VerifyEmailSerializer,
 )
 
 
@@ -166,25 +167,132 @@ class MeView(APIView):
         return Response(UserSerializer(request.user).data)
 
 
-class RoleListCreateView(ListCreateAPIView):
-    """GET/POST /roles. President only (plan: "Assign roles, see audit log")."""
+President = has_role('president')
 
-    permission_classes = [has_role('president')]
+
+class SelfAssignmentError(APIException):
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_detail = 'You cannot nominate yourself for a role.'
+    default_code = 'self_assignment'
+
+
+class InvitePendingError(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = 'This person already has a pending invite for this role.'
+    default_code = 'invite_pending'
+
+
+class RoleAlreadyHeldError(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = 'This person already holds this role.'
+    default_code = 'role_already_held'
+
+
+class InviteNotPendingError(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = 'invite_not_pending'
+
+
+class NotTheNomineeError(APIException):
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = 'Only the person invited can accept or decline.'
+    default_code = 'not_the_nominee'
+
+
+class LastPresidentError(APIException):
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_detail = 'The club must keep at least one president. Hand the role over first.'
+    default_code = 'last_president'
+
+
+INVITES = RoleInvite.objects.select_related('user', 'invited_by')
+
+
+def visible_invites(request):
+    """A president sees every invite; everyone else sees their own."""
+    if President().has_permission(request, None):
+        return INVITES.all()
+    return INVITES.filter(user=request.user)
+
+
+class RoleListCreateView(ListAPIView):
+    """GET /roles: the role assignments. POST /roles: nominate someone.
+    President only (plan: "Assign roles, see audit log").
+
+    ASSUMPTION (changes the plan's direct assignment): POST creates an
+    invite. The role is granted when the nominee accepts it.
+    """
+
+    permission_classes = [President]
     serializer_class = RoleAssignmentSerializer
     queryset = RoleAssignment.objects.order_by('-term_start', '-id')
 
-    def perform_create(self, serializer):
-        # The assignment and its audit row are saved together or not at all.
-        with transaction.atomic():
-            assignment = serializer.save()
-            audit.record(
-                actor=self.request.user,
-                action='role.assigned',
-                obj=assignment,
-                after={
-                    'user': assignment.user_id,
-                    'role': assignment.role,
-                    'term_start': assignment.term_start.isoformat(),
-                    'term_end': assignment.term_end.isoformat(),
-                },
-            )
+    def post(self, request):
+        serializer = RoleInviteCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            invite = roles.invite(inviter=request.user, **serializer.validated_data)
+        except roles.SelfAssignment:
+            raise SelfAssignmentError()
+        except roles.InvitePending:
+            raise InvitePendingError()
+        except roles.RoleAlreadyHeld:
+            raise RoleAlreadyHeldError()
+        return Response(RoleInviteSerializer(invite).data, status=status.HTTP_201_CREATED)
+
+
+class RoleEndView(APIView):
+    """POST /roles/{id}/end. President only."""
+
+    permission_classes = [President]
+
+    def post(self, request, pk):
+        get_object_or_404(RoleAssignment, pk=pk)
+        try:
+            assignment = roles.end_role(assignment_id=pk, actor=request.user)
+        except roles.LastPresident:
+            raise LastPresidentError()
+        return Response({
+            'ended': True,
+            # null when the term had only just begun and the row was removed.
+            'assignment': RoleAssignmentSerializer(assignment).data if assignment else None,
+        })
+
+
+class RoleInviteListView(ListAPIView):
+    """GET /roles/invites. Any logged-in user: a president sees all
+    invites, everyone else their own. ?status= filters.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = RoleInviteSerializer
+
+    def get_queryset(self):
+        roles.expire_stale()
+        invites = visible_invites(self.request)
+        wanted = self.request.query_params.get('status')
+        return invites.filter(status=wanted) if wanted else invites
+
+
+class RoleInviteActionView(APIView):
+    """POST /roles/invites/{id}/accept, /decline (the nominee) and /revoke
+    (a president). An invite the caller may not see is a 404.
+    """
+
+    permission_classes = [IsAuthenticated]
+    action = None
+
+    def post(self, request, pk):
+        get_object_or_404(visible_invites(request), pk=pk)
+        try:
+            if self.action == 'revoke':
+                if not President().has_permission(request, self):
+                    self.permission_denied(request)
+                invite = roles.revoke(invite_id=pk, actor=request.user)
+            else:
+                invite = roles.respond(invite_id=pk, user=request.user, accept=self.action == 'accept')
+        except roles.NotTheNominee:
+            raise NotTheNomineeError()
+        except roles.InviteNotPending as exc:
+            raise InviteNotPendingError(f'This invite is {exc.status} and can no longer be changed.')
+        return Response(RoleInviteSerializer(invite).data)

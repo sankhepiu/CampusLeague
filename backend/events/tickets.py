@@ -12,7 +12,7 @@ from finance.models import LedgerEntry
 from finance.services import post_entry
 from members.services import membership_status
 
-from .models import CheckIn, Ticket, TicketTier
+from .models import CheckIn, Ticket, TicketPass, TicketTier
 
 User = get_user_model()
 
@@ -50,6 +50,26 @@ def read_token(token):
     try:
         payload = signing.loads(token, salt=QR_SALT)
         return int(payload['t']), int(payload['e'])
+    except (signing.BadSignature, KeyError, TypeError, ValueError):
+        return None
+
+
+# Group passes ------------------------------------------------------------
+
+# Its own salt: a pass token is never accepted as a ticket or member token.
+PASS_QR_SALT = 'campusleague.pass-qr'
+
+
+def sign_pass(pass_id, event_id):
+    """Same mechanism as sign_ticket; contains the pass id and event id."""
+    return signing.dumps({'p': pass_id, 'e': event_id}, salt=PASS_QR_SALT)
+
+
+def read_pass_token(token):
+    """Return (pass_id, event_id), or None if the signature is wrong."""
+    try:
+        payload = signing.loads(token, salt=PASS_QR_SALT)
+        return int(payload['p']), int(payload['e'])
     except (signing.BadSignature, KeyError, TypeError, ValueError):
         return None
 
@@ -111,10 +131,18 @@ def issue_tickets(line, payment):
     if not taken:
         raise SoldOut()
 
+    # One pass (one QR code) for all the seats in this line.
+    ticket_pass = TicketPass.objects.create(
+        order=order, tier=tier, event_id=tier.event_id, owner=order.buyer, qr_token='',
+    )
+    # The token contains the pass id, which exists only after insert.
+    ticket_pass.qr_token = sign_pass(ticket_pass.pk, tier.event_id)
+    ticket_pass.save(update_fields=['qr_token'])
+
     tickets = []
     for _ in range(line.qty):
         ticket = Ticket.objects.create(
-            event_id=tier.event_id, tier=tier, owner=order.buyer, order=order,
+            event_id=tier.event_id, tier=tier, owner=order.buyer, order=order, ticket_pass=ticket_pass,
             code=new_code(), qr_token='', price_paid=line.amount // line.qty,
         )
         # The token contains the ticket id, which exists only after insert.
@@ -206,3 +234,103 @@ def scan(*, operator, token='', code='', event_id=None):
         ticket = Ticket.objects.select_related('owner', 'event', 'tier').get(pk=found.pk)
         existing = CheckIn.objects.select_related('scanned_by').get(ticket=ticket)
         return ScanResult('already_checked_in', ticket, existing, existing.member_status_at_scan)
+
+
+# Group pass check-in -------------------------------------------------------
+
+class TooManyForPass(Exception):
+    """More people than the pass has unused tickets for."""
+
+    def __init__(self, remaining):
+        self.remaining = remaining
+        super().__init__(f'Only {remaining} left on this pass.')
+
+
+@dataclass
+class PassScan:
+    # admitted, already_used, wrong_event or invalid.
+    result: str
+    ticket_pass: TicketPass | None = None
+    # Tickets on the pass (cancelled ones excluded), and how many of them
+    # have been checked in, counting this scan.
+    total: int = 0
+    admitted: int = 0
+    # How many this scan let in.
+    admitted_now: int = 0
+    membership_status: str | None = None
+
+    @property
+    def remaining(self):
+        return self.total - self.admitted
+
+
+def pass_counts(tickets):
+    """(total, admitted) for a pass's tickets. Cancelled tickets are not
+    part of the pass any more."""
+    live = [ticket for ticket in tickets if ticket.status != Ticket.Status.CANCELLED]
+    return len(live), sum(ticket.status == Ticket.Status.CHECKED_IN for ticket in live)
+
+
+def scan_pass(*, operator, token, count=1, event_id=None):
+    """Admit `count` people on a group pass: the next `count` tickets of the
+    pass that have not been used, each with its own CheckIn row.
+
+    Two scanners cannot admit the same seat: the pass's tickets are locked
+    FOR UPDATE, so the second scan waits and then sees what the first used.
+    Raises TooManyForPass if count is more than what is left (and admits
+    nobody).
+    """
+    ids = read_pass_token(token)
+    found = TicketPass.objects.filter(pk=ids[0]).first() if ids else None
+    # "Validation checks the signature and then the row", as for tickets.
+    if found is None or found.event_id != ids[1] or found.qr_token != token:
+        return PassScan('invalid')
+    if event_id is not None and found.event_id != event_id:
+        return PassScan('wrong_event')
+
+    with transaction.atomic():
+        # The pass row first, then its tickets in id order: every pass scan
+        # takes its locks in the same order.
+        ticket_pass = (
+            TicketPass.objects.select_for_update(of=('self',))
+            .select_related('owner', 'event', 'tier').get(pk=found.pk)
+        )
+        tickets = list(Ticket.objects.select_for_update().filter(ticket_pass=ticket_pass).order_by('id'))
+        total, admitted = pass_counts(tickets)
+        unused = [ticket for ticket in tickets if ticket.status == Ticket.Status.VALID]
+        status = membership_status(ticket_pass.owner)
+        if not unused:
+            return PassScan('already_used', ticket_pass, total, admitted, 0, status)
+        if count > len(unused):
+            raise TooManyForPass(len(unused))
+
+        # One timestamp for the whole scan, so the history can show
+        # "3 admitted at 19:02" as one line.
+        now = timezone.now()
+        for ticket in unused[:count]:
+            CheckIn.objects.create(
+                ticket=ticket, scanned_by=operator, scanned_at=now, member_status_at_scan=status,
+            )
+            ticket.status = Ticket.Status.CHECKED_IN
+            ticket.save(update_fields=['status', 'updated_at'])
+        return PassScan('admitted', ticket_pass, total, admitted + count, count, status)
+
+
+def pass_history(ticket_pass):
+    """Check-ins of a pass, oldest first, as [{at, by, count}]: tickets
+    admitted in the same scan are one line.
+    """
+    history = []
+    checkins = (
+        CheckIn.objects.filter(ticket__ticket_pass=ticket_pass)
+        .select_related('scanned_by').order_by('scanned_at', 'id')
+    )
+    for checkin in checkins:
+        last = history[-1] if history else None
+        if last and last['at'] == checkin.scanned_at and last['by_id'] == checkin.scanned_by_id:
+            last['count'] += 1
+        else:
+            history.append({
+                'at': checkin.scanned_at, 'by': checkin.scanned_by.name, 'by_id': checkin.scanned_by_id, 'count': 1,
+            })
+    return [{'at': item['at'], 'by': item['by'], 'count': item['count']} for item in history]

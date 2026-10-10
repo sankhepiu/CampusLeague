@@ -9,11 +9,12 @@ from rest_framework.views import APIView
 from events.models import TicketTier
 from events.serializers import TicketSerializer
 from events.tickets import SoldOut
-from events.views import SalesClosedError, SoldOutError, visible_events
+from events.views import SalesClosedError, SoldOutError, pass_for_order, visible_events
 from members.serializers import MembershipSerializer
 
 from . import razorpay
-from .api import IdempotencyKeyReused, idempotency_key
+from .api import CouponInvalidError, IdempotencyKeyReused, idempotency_key
+from .coupons import CouponInvalid
 from .models import OrderLine
 from .payments import (
     IdempotencyConflict, ProductUnavailable, SalesClosed, membership_basket, merch_basket, tickets_basket,
@@ -54,6 +55,14 @@ class OrderAlreadyPaidError(APIException):
     status_code = status.HTTP_409_CONFLICT
     default_detail = 'This order has already been paid.'
     default_code = 'order_already_paid'
+
+
+class CouponGoneAfterPaymentError(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = (
+        'The coupon was used up while you were paying. Nothing was issued and your payment has been flagged for a refund.'
+    )
+    default_code = 'coupon_limit_reached'
 
 
 class SoldOutAfterPaymentError(APIException):
@@ -101,6 +110,7 @@ def purchase_body(result):
         body['membership'] = MembershipSerializer(result.membership).data
     elif kind == OrderLine.Kind.TICKET:
         body['tickets'] = TicketSerializer(result.tickets, many=True).data
+        body['pass'] = pass_for_order(result.order)
     return body
 
 
@@ -118,6 +128,7 @@ class RazorpayView(APIView):
             razorpay.InvalidSignature: InvalidSignatureError,
             razorpay.OrderAlreadyPaid: OrderAlreadyPaidError,
             razorpay.SoldOutAfterPayment: SoldOutAfterPaymentError,
+            razorpay.CouponGoneAfterPayment: CouponGoneAfterPaymentError,
             IdempotencyConflict: IdempotencyKeyReused,
             SoldOut: SoldOutError,
             SalesClosed: SalesClosedError,
@@ -126,6 +137,8 @@ class RazorpayView(APIView):
         if isinstance(exc, OutOfStock):
             size = exc.product_size
             exc = OutOfStockError(f'Out of stock: {size.product.name} size {size.size} has {size.stock} left.')
+        elif isinstance(exc, CouponInvalid):
+            exc = CouponInvalidError(exc.message)
         elif type(exc) in errors:
             exc = errors[type(exc)]()
         return super().handle_exception(exc)
@@ -155,7 +168,8 @@ class RazorpayOrderView(RazorpayView):
         serializer.is_valid(raise_exception=True)
         order, created = razorpay.start_checkout(
             # Buyer from the token; prices and discount from the server.
-            user=request.user, idempotency_key=key, **basket_for(request, serializer.validated_data),
+            user=request.user, idempotency_key=key, coupon=serializer.validated_data['coupon'],
+            **basket_for(request, serializer.validated_data),
         )
         body = {
             'order_id': order.pk,

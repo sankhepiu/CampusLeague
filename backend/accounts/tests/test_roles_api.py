@@ -26,25 +26,44 @@ class RolesApiTests(ApiTestCase):
         body.update(overrides)
         return body
 
-    def test_president_assigns_a_role_and_it_takes_effect(self):
+    # POST /roles used to grant the role at once. It now creates an invite
+    # (maker-checker); the role exists only after the nominee accepts.
+    # test_role_invites.py covers the invite itself.
+
+    def test_president_nominates_and_the_role_takes_effect_only_on_acceptance(self):
         self.login_as(self.president)
 
         response = self.client.post(ROLES, self.body(), format='json')
 
         self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()['status'], 'pending')
+        self.assertEqual(self.member.current_roles(), [])
+        self.assertEqual(RoleAssignment.objects.filter(user=self.member).count(), 0)
+
+        self.login_as(self.member)
+        accepted = self.client.post(f"{ROLES}/invites/{response.json()['id']}/accept")
+        self.assertEqual(accepted.status_code, 200, accepted.content)
         self.assertEqual(self.member.current_roles(), ['treasurer'])
 
-    def test_assignment_writes_an_audit_row_naming_the_president(self):
+    def test_nomination_and_assignment_each_write_an_audit_row(self):
         self.login_as(self.president)
-        self.client.post(ROLES, self.body(), format='json')
+        invite_id = self.client.post(ROLES, self.body(), format='json').json()['id']
 
         log = AuditLog.objects.get()
+        self.assertEqual((log.actor, log.action), (self.president, 'role.invited'))
+        self.assertEqual((log.object_type, log.object_id), ('accounts.roleinvite', invite_id))
+        self.assertEqual((log.after['role'], log.after['user']), ('treasurer', self.member.id))
+
+        self.login_as(self.member)
+        self.client.post(f'{ROLES}/invites/{invite_id}/accept')
+        log = AuditLog.objects.get(action='role.assigned')
         assignment = RoleAssignment.objects.get(user=self.member)
-        self.assertEqual(log.actor, self.president)
-        self.assertEqual(log.action, 'role.assigned')
+        # The nominee is the actor: accepting is what created the role.
+        self.assertEqual(log.actor, self.member)
         self.assertEqual((log.object_type, log.object_id), ('accounts.roleassignment', assignment.id))
         self.assertEqual(log.after['role'], 'treasurer')
         self.assertEqual(log.after['user'], self.member.id)
+        self.assertEqual((log.after['invite'], log.after['invited_by']), (invite_id, self.president.id))
 
     def test_every_other_role_is_refused(self):
         for role in ['treasurer', 'event_manager', 'volunteer_coordinator', 'member']:
@@ -113,7 +132,7 @@ class AuditLogAppendOnlyTests(ApiTestCase):
     def test_audit_row_cannot_be_updated(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
             AuditLog.objects.update(action='nothing.happened')
-        self.assertEqual(AuditLog.objects.get().action, 'role.assigned')
+        self.assertEqual(AuditLog.objects.get().action, 'role.invited')
 
     def test_audit_row_cannot_be_deleted(self):
         with self.assertRaises(IntegrityError), transaction.atomic():

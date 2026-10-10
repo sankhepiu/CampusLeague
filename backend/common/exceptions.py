@@ -34,6 +34,13 @@ def _flatten(details, field=None):
     return errors
 
 
+def _by_field(errors):
+    fields = {}
+    for item in errors:
+        fields.setdefault(item['field'] or '_', item['message'])
+    return fields
+
+
 def api_exception_handler(exc, context):
     """Plan: "Return the same error shape everywhere: a code, a human
     message, and the field if relevant."
@@ -80,6 +87,9 @@ def api_exception_handler(exc, context):
             'message': first['message'],
             'field': first['field'],
             'errors': errors,
+            # The same problems keyed by field, for forms: the first message
+            # for each. Problems with no single field are under "_".
+            'fields': _by_field(errors),
         }
     else:
         detail = exc.detail

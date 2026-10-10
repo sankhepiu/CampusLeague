@@ -61,9 +61,18 @@ once. The top-level `message` and `field` repeat the first item.
   "errors": [
     { "field": "email", "code": "email_taken", "message": "An account with this email already exists." },
     { "field": "name", "code": "blank", "message": "This field may not be blank." }
-  ]
+  ],
+  "fields": {
+    "email": "An account with this email already exists.",
+    "name": "This field may not be blank."
+  }
 }
 ```
+
+`fields` holds the same problems keyed by field, one message each (the first
+for that field), for forms that only need "what to show under which input".
+Nested fields use dotted paths (`items.0.quantity`). A problem that belongs to
+no single field is under the key `_`.
 
 Codes used by every endpoint:
 
@@ -82,7 +91,34 @@ Codes used by every endpoint:
 | 500 | `server_error` | A bug on the server. The message is generic; details are only in the server log. |
 
 Common per-field codes inside `errors`: `required`, `blank`, `invalid`,
-`max_length`.
+`max_length`, `min_length`, `min_value`, `max_value`, `invalid_choice`,
+`does_not_exist`.
+
+### Validation limits
+
+**Assumption:** the plan gives no limits; these are enforced on every write
+endpoint and each has a test. A value outside them is a `400 validation_error`
+on that field, and nothing is saved.
+
+| What | Rule | Code when broken |
+|---|---|---|
+| Any amount of money (expense, sale, goal, budget, price, coupon value) | Whole paise, at most 1,000,000,000 (Rs 1 crore). Greater than zero, except `budget_amount` and a coupon's `min_order`, which may be 0. | `min_value`, `max_value`, `invalid` |
+| Quantity in a purchase | 1 to 10 per ticket order and per merch item; at most 20 items in one merch order. | `min_value`, `max_value` |
+| Restock quantity | 1 to 10,000. | `min_value`, `max_value` |
+| Event times | `ends_at` after `starts_at`. A new event, or a changed `starts_at`, must be in the future. | `ends_before_start`, `starts_in_past` |
+| Event capacity | 1 to 100,000, and never below what its tiers hold (which is never below what is sold). | `below_tier_capacity` |
+| Tier capacity | At least 1 and within what the event has left. | `exceeds_event_capacity` |
+| Tier sale window | `sale_closes` after `sale_opens`; `sale_closes` not after the event ends; `sale_opens` before the event ends. An event's `ends_at` cannot be moved before a tier's window. | `closes_before_opens`, `outside_event`, `before_sale_window` |
+| Fundraiser dates | `ends_on` not before `starts_on`. | `ends_before_start` |
+| Task due date | A due date being set or changed cannot be in the past. | `in_past` |
+| Titles and names | Event title and venue, fundraiser title, task title, announcement title: 200. Product, tier and plan names: 100. Person's name: 2 to 150. | `max_length`, `min_length`, `blank` |
+| Descriptions | Event, task and product description: 2,000. Expense description: 3 to 500. Notes: 200. | `max_length`, `min_length` |
+| Announcement | `title` 3 to 200, `body` 3 to 5,000. | `max_length`, `min_length` |
+| Email | A valid address, at most 254. | `invalid` |
+| College id | 3 to 20 letters, digits or hyphens, starting and ending with a letter or digit (`SSA-001`, `CS21B1042`). | `invalid_college_id`, `max_length` |
+| Receipt upload | `.png`, `.jpg`/`.jpeg` or `.pdf`; at most 5 MB; the declared content type must match the extension; the first bytes must be that file type's signature. | `unsupported_file_type`, `file_too_large`, `content_type_mismatch`, `file_content_mismatch` |
+| Product sale | `sale_pct` 0 to 90. | `min_value`, `max_value` |
+| Coupon | See "Coupons". | |
 
 ## User object
 
@@ -123,8 +159,8 @@ Request:
 |---|---|---|---|
 | `email` | string | yes | Valid email, max 254. Stored lowercase; must be unique ignoring case. |
 | `password` | string | yes | Max 128. At least 8 characters, not entirely numeric, not a common password, not too similar to the email or name. |
-| `name` | string | yes | Not blank, max 150. |
-| `college_id` | string | yes | Not blank, max 50. |
+| `name` | string | yes | 2 to 150 characters. |
+| `college_id` | string | yes | 3 to 20 letters, digits or hyphens, starting and ending with a letter or digit, for example `SSA-001` (`invalid_college_id`). **Changed:** it used to accept any text up to 50 characters. |
 | `phone` | string | no | **Assumption:** 7 to 15 digits with an optional leading `+`, no spaces. |
 
 ```json
@@ -364,6 +400,7 @@ Request:
 |---|---|---|---|
 | `plan` | integer | yes | Id of an active plan. |
 | `test_outcome` | string | no | Mock gateway switch: `success` (default), `failure` or `pending`. **Assumption:** this is the plan's "test card flag". |
+| `coupon` | string | no | A coupon code. See "Coupons". |
 
 ```json
 { "plan": 1, "test_outcome": "success" }
@@ -384,11 +421,14 @@ Responses:
     "status": "paid",
     "subtotal": 50000,
     "discount": 0,
+    "coupon": null,
+    "coupon_discount": 0,
     "total": 50000,
     "payment_ref": "mock_5b1f0c3e9a7d4e2f8c6b1a0d9e8f7a6b",
+    "needs_refund": false,
     "created_at": "2026-10-10T11:42:07.123456+05:30",
     "lines": [
-      { "id": 15, "kind": "membership", "label": "Basic membership", "plan": 1, "tier": null, "product_size": null, "qty": 1, "unit_price": 50000, "discount": 0 }
+      { "id": 15, "kind": "membership", "label": "Basic membership", "plan": 1, "tier": null, "product_size": null, "qty": 1, "unit_price": 50000, "discount": 0, "coupon_discount": 0 }
     ]
   },
   "payment": {
@@ -421,8 +461,11 @@ Errors:
 | 400 | `idempotency_key_required` | The header is missing or malformed. |
 | 400 | `validation_error` | `plan` missing, unknown or inactive (`does_not_exist`); `test_outcome` not one of the three values (`invalid_choice`). |
 | 401 | `not_authenticated`, `authentication_failed` | |
+| 400 | `coupon_invalid` | The coupon cannot be used for this purchase; `message` says why. Nothing was created. |
 | 402 | `payment_failed` | `test_outcome: failure`. The order is cancelled; no payment, membership or ledger entry exists. |
 | 409 | `idempotency_key_reused` | The key already paid for a different plan, or belongs to another user. |
+| 409 | `coupon_limit_reached` | The coupon's last use went to someone else at the same moment. Nothing was created. |
+| 409 | `gateway_not_enabled` | **New.** The server is on Razorpay, so this mock endpoint is closed (checked before anything else in the request). Use `POST /payments/razorpay/order`. The same applies to `POST /events/{id}/tickets` and `POST /orders`. |
 
 **Assumption:** a key whose attempt failed or stayed pending is not
 remembered, so it may be sent again to retry. Nothing yet completes a
@@ -517,25 +560,134 @@ Errors: `400 validation_error`, `401 not_authenticated`, `403 permission_denied`
 
 ---
 
-## GET /roles, POST /roles
+## Roles and role invites
 
-Assign roles with terms. Requirement: R19.
+Requirement: R19. **Assumption (changes the plan's direct assignment):** a role
+is offered, not imposed. The president nominates someone; the role exists only
+once that person accepts. Until then they have none of the role's access.
+
+**Breaking change:** `POST /roles` used to create the role assignment and
+return it. It now creates an invite and returns the invite object.
+
+Role assignment object (unchanged): `{ "id", "user", "role", "term_start", "term_end", "created_at" }`,
+where `user` is a user id.
+
+Invite object:
+
+```json
+{
+  "id": 7,
+  "user": { "id": 11, "name": "Aditya Sharma", "email": "member05@skyline.test" },
+  "role": "event_manager",
+  "invited_by": { "id": 2, "name": "Ananya Rao" },
+  "status": "pending",
+  "term_start": "2026-10-11",
+  "term_end": "2027-07-13",
+  "expires_at": "2026-10-14T01:10:00+05:30",
+  "created_at": "2026-10-11T01:10:00+05:30",
+  "responded_at": null
+}
+```
+
+| Field | Notes |
+|---|---|
+| `status` | `pending`, `accepted`, `declined`, `revoked` or `expired`. |
+| `expires_at` | 72 hours after `created_at`. A pending invite past it is reported as `expired` and can no longer be accepted. |
+| `term_start`, `term_end` | The term the role will have if accepted. |
+| `responded_at` | When it was accepted, declined or revoked; otherwise `null`. |
+
+### GET /roles
 
 - **Who:** President only (`403 permission_denied` for everyone else,
   including a president whose term has ended or not yet started).
-- **Database:** POST creates one role assignment and one audit-log row
-  (`role.assigned`), together or not at all.
 
-POST request:
+Response `200`: a paginated list of role assignment objects.
+
+### POST /roles
+
+Nominate someone for a role.
+
+- **Who:** President only.
+- **Database:** one invite and one audit-log row (`role.invited`), together or
+  not at all. **No role assignment.**
+- **Email:** the nominee is emailed (same mail settings as the verification
+  code). If the email cannot be sent the invite still exists.
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `user` | integer | yes | Id of an existing user. |
+| `user` | integer | yes | An active user whose email is verified. Anyone else is `does_not_exist`. |
 | `role` | string | yes | `president`, `treasurer`, `event_manager`, `volunteer_coordinator` or `member`. |
-| `term_start`, `term_end` | date | yes | Both days included; `term_end` not before `term_start` (`term_end_before_start`). |
+| `term_start` | date | no | Default: today. |
+| `term_end` | date | no | Default: one year after `term_start`. Not before `term_start` (`term_end_before_start`) and not already over (`term_in_past`). |
 
-Response `201`: `{ "id", "user", "role", "term_start", "term_end", "created_at" }`.
-GET returns a paginated list of the same objects.
+Response `201`: the invite object, `status` `pending`.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `validation_error` | See the rules above. |
+| 400 | `self_assignment` | `user` is the caller. |
+| 401, 403 | | Not logged in; not a current president. |
+| 409 | `invite_pending` | That person already has a pending invite for that role. |
+| 409 | `role_already_held` | That person already holds that role for a term that has not ended. |
+
+### GET /roles/invites
+
+- **Who:** Any logged-in user. A president sees every invite; everyone else
+  sees only invites addressed to them.
+- Optional `?status=pending` (or any other status).
+
+Response `200`: a paginated list of invite objects, newest first.
+
+### POST /roles/invites/{id}/accept, /decline
+
+- **Who:** The nominee only.
+- **Database (accept):** in one transaction: the role assignment is created
+  with the invite's term, the invite becomes `accepted`, and an audit-log row
+  `role.assigned` is written (actor: the nominee; `after` names the invite and
+  who sent it). If any part fails, none of it is saved.
+- **Database (decline):** the invite becomes `declined`; audit row
+  `role.invite_declined`. No role.
+
+No body. Response `200`: the invite object.
+
+| Status | `code` | When |
+|---|---|---|
+| 403 | `not_the_nominee` | A president, who can see the invite, tried to answer it. |
+| 404 | `not_found` | No such invite, or one the caller cannot see. |
+| 409 | `invite_not_pending` | Already accepted, declined, revoked, or expired. |
+
+### POST /roles/invites/{id}/revoke
+
+- **Who:** President only (`403 permission_denied` for the nominee; `404` for
+  anyone who cannot see the invite).
+- **Database:** the invite becomes `revoked`; audit row `role.invite_revoked`.
+
+Response `200`: the invite object. `409 invite_not_pending` if it was already
+answered or has expired.
+
+### POST /roles/{id}/end
+
+End a role assignment now.
+
+- **Who:** President only.
+- **Database:** the assignment's `term_end` becomes yesterday, so the access
+  stops today; audit row `role.ended`. A term that started today is removed
+  instead (a term cannot end before it starts). Nothing changes if the term
+  was already over.
+- **Rule:** the club always keeps at least one current president. The check
+  locks the president rows, so two presidents cannot end each other at the
+  same moment.
+
+Response `200`: `{ "ended": true, "assignment": { ...role assignment } }`;
+`assignment` is `null` when the row was removed.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `last_president` | This is the only current president. |
+| 401, 403, 404 | | Not logged in; not a president; no such assignment. |
+
+Treasurers still cannot approve, reject or pay their own expense
+(`403 self_approval`); role invites do not change that.
 
 ## Event and tier objects
 
@@ -559,8 +711,10 @@ Tier:
 | `public_price`, `member_price` | integer | Paise. Both greater than zero (**Assumption:** no free tickets yet). |
 | `price` | integer | What **the caller** would pay now: `member_price` if logged in with an active membership, otherwise `public_price`. Display this one. |
 | `capacity` | integer | |
+| `sold` | integer | Seats sold in this tier. |
 | `seats_left` | integer | For "X seats left". `0` means sold out. |
 | `sale_opens`, `sale_closes` | timestamp or `null` | **Assumption:** `null` means no limit on that side. |
+| `sale_open` | boolean | The event is `on_sale` and now is inside this tier's sale window. It says nothing about seats: a tier can be open and sold out, so check `seats_left` too. |
 
 ## GET /events, GET /events/{id}
 
@@ -570,6 +724,34 @@ Requirements: R6, R7, R8.
 - **Database:** read only.
 
 Response `200`: a paginated list of events, or one event.
+
+`GET /events/{id}` returns the event object plus an overview (**Assumption:**
+beyond the plan). The list does not include these fields.
+
+| Field | Type | Notes |
+|---|---|---|
+| `organiser` | object | `{ "name" }`: whoever created the event. Events created before this was recorded show `Skyline Student Association`. |
+| `capacity` | integer | Same value as `capacity_total`. |
+| `sold` | integer | Seats sold across all tiers. |
+| `seats_left` | integer | Seats still buyable: the sum of the tiers' `seats_left`. |
+| `checked_in` | integer | People admitted so far. |
+| `my_passes` | pass[] | The caller's own passes for this event (see "Pass object"); `[]` when not logged in. |
+| `revenue` | integer | **President and event manager only**; absent for everyone else. Ticket revenue for this event from the ledger, paise. |
+| `attendance_pct` | number or `null` | **President and event manager only.** `checked_in` as a percentage of `sold`, one decimal; `null` when nothing is sold. |
+
+```json
+{
+  "id": 3, "title": "Board Games Meetup", "description": "Casual evening, snacks included.",
+  "venue": "Student Centre, Room 2", "starts_at": "2026-10-21T01:10:00+05:30", "ends_at": "2026-10-21T04:10:00+05:30",
+  "capacity_total": 25, "status": "on_sale",
+  "tiers": [ { "id": 4, "name": "Entry", "public_price": 10000, "member_price": 5000, "price": 5000,
+               "capacity": 25, "sold": 10, "seats_left": 15, "sale_opens": null, "sale_closes": null, "sale_open": true } ],
+  "organiser": { "name": "Meera Nair" },
+  "capacity": 25, "sold": 10, "seats_left": 15, "checked_in": 3,
+  "my_passes": [],
+  "revenue": 50000, "attendance_pct": 30.0
+}
+```
 
 ## POST /events, PATCH /events/{id}, POST /events/{id}/tiers
 
@@ -585,6 +767,13 @@ Response `200`: a paginated list of events, or one event.
   (`exceeds_event_capacity`); `capacity_total` cannot be lowered below the
   tiers' total (`below_tier_capacity`); tier names are unique per event
   (`tier_name_taken`). `sold_count` cannot be set through the API.
+- **New rules:** a new event must start in the future, and an existing one
+  cannot be moved into the past (`starts_in_past`); a past event can still be
+  edited as long as `starts_at` is not changed. A tier's sale window must lie
+  inside the event (`outside_event`), and the event's end cannot be moved
+  before a tier's sale window (`before_sale_window`). Length and amount
+  limits are in "Validation limits".
+- The caller who creates an event is recorded as its organiser.
 
 Responses: `201` (or `200` for PATCH) with the event or tier object.
 Errors: `400 validation_error`, `401`, `403 permission_denied`, `404 not_found`.
@@ -609,9 +798,15 @@ Request:
 | `tier` | integer | yes | A tier of this event. |
 | `quantity` | integer | no | 1 to 10, default 1. **Assumption:** 10 is the most in one purchase. |
 | `test_outcome` | string | no | `success` (default), `failure`, `pending`. |
+| `coupon` | string | no | A coupon code. See "Coupons". |
 
-Responses: `201` (or `200` on a replay) with `order`, `payment` and `tickets`;
-`202` when pending (`tickets` is `[]`, no seat is held).
+Responses: `201` (or `200` on a replay) with `order`, `payment`, `tickets` and
+`pass`; `202` when pending (`tickets` is `[]`, `pass` is `null`, no seat is
+held).
+
+**New:** `pass` is the group pass for this purchase (see "Pass object"): one
+QR code that admits everyone in the order. `tickets` is unchanged, and each
+ticket's own `qr_token` still works at the door.
 
 Ticket object:
 
@@ -643,12 +838,64 @@ Errors:
 | 409 | `sold_out` | Fewer seats left than requested. Nothing was created. |
 | 409 | `sales_closed` | Event not `on_sale`, or outside the tier's sale window. |
 | 409 | `idempotency_key_reused` | Key already paid for a different purchase. |
+| 400 | `coupon_invalid` | The coupon cannot be used; `message` says why. |
+| 409 | `coupon_limit_reached` | The coupon's last use went to someone else at the same moment. |
+| 409 | `gateway_not_enabled` | The server is on Razorpay; this mock endpoint is closed. |
+
+## Pass object
+
+**Assumption (beyond the plan):** one QR code per ticket purchase. Buying N
+tickets still creates N tickets (one per seat, so seat counting is unchanged)
+and one pass that groups them. Each scan of the pass admits the next unused
+ticket.
+
+```json
+{
+  "pass_id": 12,
+  "event": { "id": 3, "name": "Board Games Meetup", "title": "Board Games Meetup", "starts_at": "2026-10-21T01:10:00+05:30", "venue": "Student Centre, Room 2" },
+  "tier": { "id": 4, "name": "Entry" },
+  "quantity": 10,
+  "admitted": 3,
+  "remaining": 7,
+  "qr_token": "eyJwIjoxMiwiZSI6M30:1vAbCd:Qm9...",
+  "tickets": [ { "id": 70, "code": "K7MPQ2XD", "status": "checked_in" }, { "id": 71, "code": "H4TTW9BN", "status": "valid" } ],
+  "created_at": "2026-10-11T01:10:00+05:30"
+}
+```
+
+| Field | Notes |
+|---|---|
+| `pass_id` | Use it for `GET /tickets/passes/{id}`. |
+| `event` | `name` and `title` are the same value (the event object calls it `title`). |
+| `quantity` | Tickets on the pass. Cancelled tickets are not counted. |
+| `admitted`, `remaining` | Tickets checked in so far, and those still unused. `admitted + remaining = quantity`. They are counted from the tickets, so they also reflect a ticket scanned on its own. |
+| `qr_token` | Render as the QR code exactly as received. |
+| `tickets` | The seats, oldest first: `status` is `valid`, `checked_in` or `cancelled`. `code` is the short code for typing in. |
+
+Tickets bought before passes existed were each given a pass by a migration.
 
 ## GET /tickets/me
 
-- **Who:** Any logged-in user. Only the caller's own tickets, newest first.
+- **Who:** Any logged-in user. Only the caller's own passes, newest first.
 
-Response `200`: a paginated list of ticket objects.
+**Breaking change:** this used to return ticket objects. It now returns a
+paginated list of pass objects; the individual tickets are inside each pass.
+
+## GET /tickets/passes/{id}
+
+- **Who:** The pass's owner, or door staff (president, event manager,
+  volunteer coordinator). Anyone else gets `404`, as for a pass that does not
+  exist.
+
+Response `200`: the pass object plus:
+
+| Field | Notes |
+|---|---|
+| `order` | The order id. |
+| `holder` | `{ "name" }` of the owner. |
+| `history` | Check-ins, oldest first: `[{ "at": timestamp, "by": "Meera Nair", "count": 3 }]`. People admitted in one scan are one line. A ticket scanned on its own appears as a line with `count` 1. |
+
+Errors: `401`, `404 not_found`.
 
 ## POST /checkin
 
@@ -660,16 +907,19 @@ Scan a ticket, or a member card, at the door. Requirements: R5, R9.
   staff the door. Treasurer and ordinary members get `403`.
 - **Database:** for a valid, unused ticket: one check-in row (unique per
   ticket) and the ticket becomes `checked_in`. A member card scan writes
-  nothing.
+  nothing. A pass scan does the same for each person admitted, with the
+  pass and its tickets locked so two scanners cannot admit the same seat.
 
-Request: exactly one of `token`, `code` or `member_token`.
+Request: exactly one of `token`, `code`, `member_token` or `pass_token`.
 
 | Field | Type | Notes |
 |---|---|---|
 | `token` | string | The scanned QR content. |
 | `code` | string | The short code typed by hand; case, spaces and dashes are ignored. |
 | `member_token` | string | A member card's QR content (`member_qr_token` from `GET /memberships/me`). See "Member card" below. |
-| `event` | integer | Optional. **Assumption:** the event being scanned for; a ticket for any other event is `invalid`. |
+| `pass_token` | string | A group pass's QR content. A pass token sent as `token` is recognised too, so a scanner need not know which kind of code it read. See "Group pass" below. |
+| `count` | integer | Group passes only. How many people to admit with this scan: 1 to 10, default 1. Ignored for tickets and member cards. |
+| `event` | integer | Optional. **Assumption:** the event being scanned for; a ticket for any other event is `invalid`, a pass for any other event is `wrong_event`. |
 
 Response: **always `200`** with one result object (the plan's shape):
 
@@ -693,6 +943,36 @@ Response: **always `200`** with one result object (the plan's shape):
 
 Show "Active member" only when `membership_status` is `active`; `lapsed` and
 `none` are both "Not a member".
+
+### Group pass
+
+When the token is a pass, the response (**always `200`**) has these keys:
+
+```json
+{
+  "result": "admitted",
+  "pass_id": 12,
+  "admitted": 4,
+  "admitted_now": 1,
+  "total": 10,
+  "remaining": 6,
+  "holder": { "name": "Aarav Sharma" },
+  "membership_status": "active",
+  "event": { "id": 3, "name": "Board Games Meetup", "title": "Board Games Meetup" },
+  "tier": { "id": 4, "name": "Entry" }
+}
+```
+
+| `result` | Meaning | Fields |
+|---|---|---|
+| `admitted` | `admitted_now` people let in. | `admitted` is the running total including this scan; `remaining = total - admitted`. |
+| `already_used` | Every ticket on the pass has been used. Admit nobody. | `admitted` equals `total`, `remaining` and `admitted_now` are `0`. |
+| `wrong_event` | A genuine pass, but not for the `event` sent. | Everything else `null`. Nobody admitted. |
+| `invalid` | Forged, altered or unknown. | The ticket response shape, with everything `null`. |
+
+Asking for more than the pass has left is the one error:
+`400 validation_error` on `count`, code `exceeds_remaining`, message
+"Only N left on this pass."; nobody is admitted.
 
 ### Member card
 
@@ -781,7 +1061,9 @@ Returned by every purchase endpoint and by `GET /orders/me`.
 |---|---|---|
 | `id` | integer | |
 | `status` | string | `pending`, `paid` or `cancelled`. |
-| `subtotal`, `discount`, `total` | integer | Paise. `total = subtotal - discount`, always. |
+| `subtotal`, `discount`, `total` | integer | Paise. `total = subtotal - discount`, always. `discount` is every discount together: sale, member and coupon. |
+| `coupon` | string or `null` | The coupon code used, or `null`. |
+| `coupon_discount` | integer | The part of `discount` that came from the coupon; `0` without one. |
 | `payment_ref` | string | Gateway reference (`mock_...` or Razorpay's `pay_...`); `""` until paid. Also set when `needs_refund` is true. |
 | `needs_refund` | boolean | **Assumption.** `true` only on a `cancelled` Razorpay order whose buyer was charged but got nothing (sold out while paying). Always `false` for mock purchases. |
 | `created_at` | timestamp | |
@@ -797,7 +1079,8 @@ Order line:
 | `plan`, `tier`, `product_size` | integer or `null` | The one matching `kind` is set. |
 | `qty` | integer | |
 | `unit_price` | integer | Per unit, before discount. |
-| `discount` | integer | Total discount on this line. Paid = `qty * unit_price - discount`. |
+| `discount` | integer | Total discount on this line (sale, member and coupon). Paid = `qty * unit_price - discount`. |
+| `coupon_discount` | integer | The part of `discount` that came from the order's coupon. |
 
 `label` by kind (the separator is a middle dot, U+00B7, with a space either side):
 
@@ -818,11 +1101,13 @@ event, tier or product. Every endpoint that returns an order includes it:
 |---|---|---|
 | `id` | integer | |
 | `name`, `description` | string | |
-| `base_price` | integer | Paise, before member discount. |
-| `price` | integer | What **the caller** would pay per item now (their plan's `merch_discount_pct` applied if their membership is active). Display this one. |
+| `category` | string | **New.** `apparel`, `accessories`, `stationery` or `drinkware`. |
+| `base_price` | integer | Paise, before any discount. Show it struck through when it differs from `price`. |
+| `sale_pct` | integer | **New.** 0 to 90: percent off for everyone. `0` means not on sale. |
+| `price` | integer | What **the caller** would pay per item now: `base_price`, less the sale, less their plan's `merch_discount_pct` if their membership is active (in that order, each step rounded down). Display this one. A coupon is applied at checkout, after both. |
 | `image_url` | string or `null` | Path of the product picture relative to the site root, `/media/products/<file>.png`, to load through the frontend's `/media` proxy; `null` when there is none. Replaces the earlier `image` field. **Assumption:** there is no upload endpoint; the seed provides the pictures. |
 | `active` | boolean | Inactive products are returned to shop staff only. |
-| `sizes` | array | Always `S`, `M`, `L`, `XL` in that order: `{ "id", "size", "stock" }`. Use `id` when ordering. |
+| `sizes` | array | `{ "id", "size", "stock" }`. Clothing has `S`, `M`, `L`, `XL` in that order. **New:** a product that does not come in sizes has exactly one entry, with `size` `ONE`, holding its stock; do not show a size picker for it. Use `id` when ordering either kind. |
 
 ## GET /products
 
@@ -835,7 +1120,8 @@ Response `200`: a paginated list of product objects.
 ```json
 {
   "id": 1, "name": "Skyline Hoodie", "description": "Heavyweight fleece with the club crest.",
-  "base_price": 120000, "price": 96000, "image_url": "/media/products/skyline-hoodie.png", "active": true,
+  "category": "apparel", "base_price": 120000, "sale_pct": 0, "price": 96000,
+  "image_url": "/media/products/skyline-hoodie.png", "active": true,
   "sizes": [ { "id": 1, "size": "S", "stock": 8 }, { "id": 2, "size": "M", "stock": 5 },
              { "id": 3, "size": "L", "stock": 6 }, { "id": 4, "size": "XL", "stock": 1 } ]
 }
@@ -863,6 +1149,7 @@ Request:
 | `items[].product_size` | integer | yes | A size `id` from `GET /products`. |
 | `items[].quantity` | integer | no | 1 to 10, default 1. |
 | `test_outcome` | string | no | `success` (default), `failure`, `pending`. |
+| `coupon` | string | no | A coupon code. See "Coupons". Its discount is shared across the lines in proportion to their cost. |
 
 ```json
 { "items": [ { "product_size": 2, "quantity": 1 } ] }
@@ -880,6 +1167,9 @@ Errors:
 | 409 | `out_of_stock` | A size has less stock than requested. `message` names the product, size and what is left. |
 | 409 | `product_unavailable` | A size id does not exist or its product is inactive. |
 | 409 | `idempotency_key_reused` | Key already paid for a different basket. |
+| 400 | `coupon_invalid` | The coupon cannot be used; `message` says why. |
+| 409 | `coupon_limit_reached` | The coupon's last use went to someone else at the same moment. |
+| 409 | `gateway_not_enabled` | The server is on Razorpay; this mock endpoint is closed. |
 
 ## GET /orders/me
 
@@ -892,21 +1182,126 @@ what was bought, so no further lookups are needed:
 
 ```json
 {
-  "id": 121, "status": "paid", "subtotal": 160000, "discount": 32000, "total": 128000,
+  "id": 121, "status": "paid", "subtotal": 160000, "discount": 32000, "coupon": null, "coupon_discount": 0, "total": 128000,
   "payment_ref": "mock_5b1f0c3e9a7d4e2f8c6b1a0d9e8f7a6b", "needs_refund": false, "created_at": "2026-10-10T18:20:00+05:30",
   "lines": [
-    { "id": 140, "kind": "merch", "label": "Skyline Hoodie · M", "plan": null, "tier": null, "product_size": 2, "qty": 1, "unit_price": 120000, "discount": 24000 },
-    { "id": 141, "kind": "merch", "label": "Skyline T-Shirt · XL", "plan": null, "tier": null, "product_size": 8, "qty": 1, "unit_price": 40000, "discount": 8000 }
+    { "id": 140, "kind": "merch", "label": "Skyline Hoodie · M", "plan": null, "tier": null, "product_size": 2, "qty": 1, "unit_price": 120000, "discount": 24000, "coupon_discount": 0 },
+    { "id": 141, "kind": "merch", "label": "Skyline T-Shirt · XL", "plan": null, "tier": null, "product_size": 8, "qty": 1, "unit_price": 40000, "discount": 8000, "coupon_discount": 0 }
   ]
 }
 ```
 
+## Coupons
+
+**Assumption:** coupons are beyond the backend plan.
+
+- **Price order:** sale price, then member discount, then the coupon, which is
+  worked out on what is left after the first two.
+- **Never free:** a coupon cannot take an order below 100 paise (Rs 1). Every
+  order has a payment and a ledger entry, and neither can be zero.
+- **Counting uses:** a use is counted only when the payment succeeds. A
+  failed, pending or abandoned order uses nothing. The limits are enforced
+  with the coupon row locked, so the last use cannot go to two buyers.
+- **Ledger (Assumption):** unchanged. Revenue is posted at the amount actually
+  paid, net of every discount, as before. The coupon and what it took off are
+  stored on the order and its lines and shown by `GET /orders/me` and the
+  trace. Reconciliation still runs the same 11 checks.
+
+Coupon object:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `code` | string | 3 to 20 letters, digits, `-` or `_`. Stored and returned in upper case; matching ignores case. Unique. |
+| `kind` | string | `percent` or `flat`. |
+| `value` | integer | For `percent`: 1 to 100. For `flat`: paise, 1 to 1,000,000,000. |
+| `min_order` | integer | The purchase must cost at least this (after sale and member discounts). Default 0. |
+| `max_discount` | integer or `null` | The most it can take off; `null` for no cap. |
+| `valid_from`, `valid_to` | timestamp or `null` | `null` means no limit on that side. `valid_to` must be after `valid_from`. |
+| `usage_limit` | integer or `null` | Paid orders in total; `null` for unlimited. Cannot be set below `used_count`. |
+| `per_user_limit` | integer | Paid orders per user. Default 1. |
+| `applies_to` | string | `all`, `merch`, `tickets` or `membership`. Default `all`. |
+| `active` | boolean | Default `true`. |
+| `used_count` | integer | Read-only: paid orders so far. |
+| `created_at` | timestamp | |
+
+Seeded: `WELCOME10` (10% off a membership), `GALA50` (Rs 50 off tickets, order
+of Rs 200 or more), `MERCH20` (20% off merchandise, at most Rs 150, 5 uses).
+
+### POST /coupons/validate
+
+"What would this code take off?" Changes and reserves nothing; the purchase
+checks the coupon again.
+
+- **Who:** Any logged-in user.
+
+Request (all required):
+
+| Field | Type | Rules |
+|---|---|---|
+| `code` | string | Any letter case. |
+| `applies_to` | string | `merch`, `tickets` or `membership`: what is being bought. |
+| `amount` | integer | What the purchase costs before the coupon, in paise (for merch: the sum of `price * quantity`). |
+
+Response: **always `200`**:
+
+```json
+{ "valid": true, "discount": 5000, "final_amount": 45000, "reason": null, "message": null }
+```
+
+When not valid, `discount` is `0`, `final_amount` equals `amount`, `message`
+is text for the user, and `reason` is one of:
+
+| `reason` | Meaning |
+|---|---|
+| `not_found` | No coupon has this code. |
+| `inactive` | Switched off. |
+| `not_started`, `expired` | Outside `valid_from` / `valid_to`. |
+| `not_applicable` | Not for this kind of purchase. |
+| `min_order_not_met` | `amount` is below `min_order`. |
+| `usage_limit_reached` | Used up. |
+| `already_used` | This user has reached `per_user_limit`. |
+| `no_discount` | The purchase is too small for the coupon to take anything off. |
+
+Errors: `400 validation_error` (a field missing, `applies_to` not one of the
+three, `amount` out of range), `401`.
+
+### Using a coupon
+
+Send `"coupon": "CODE"` to `POST /memberships`, `POST /events/{id}/tickets`,
+`POST /orders` or `POST /payments/razorpay/order`. An empty string or no field
+means no coupon.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `coupon_invalid` | Any of the reasons above; `message` carries the text. Nothing is created. |
+| 409 | `coupon_limit_reached` | Mock: the last use went to another buyer in the same instant; nothing is created. Razorpay verify: the coupon was used up while the buyer was paying; the order is flagged `needs_refund`, as for `sold_out`. |
+
+### GET /coupons, POST /coupons, GET/PATCH/DELETE /coupons/{id}
+
+- **Who:** President or treasurer.
+- POST takes the coupon fields (`code`, `kind`, `value` required). PATCH
+  accepts any subset. PUT is not supported. `used_count` cannot be set.
+- DELETE removes a coupon that has never been on an order (`204`). One that
+  has is refused with `409 coupon_in_use`; set `active` to `false` instead.
+
+Responses: the coupon object (`201` on create), or a paginated list.
+Errors: `400 validation_error` (codes include `unique`, `invalid`,
+`invalid_choice`, `min_value`, `max_value`, `ends_before_start`,
+`below_used_count`), `401`, `403 permission_denied`, `404 not_found`,
+`409 coupon_in_use`.
+
 ## Razorpay payments
 
 **Assumption:** everything in this section is beyond the backend plan, which
-specifies only the mock gateway. The mock endpoints (`POST /memberships`,
-`POST /events/{id}/tickets`, `POST /orders`) are unchanged and keep working
-whichever gateway is selected.
+specifies only the mock gateway.
+
+**Changed:** while the server is on Razorpay, the three mock purchase
+endpoints (`POST /memberships`, `POST /events/{id}/tickets`, `POST /orders`)
+refuse every request with `409 gateway_not_enabled`. They exist to give
+things away for a test flag, so they are closed whenever a real gateway is
+configured. With `PAYMENT_GATEWAY=mock` (or Razorpay keys missing) they work
+as before. Use `GET /payments/config` to choose the flow.
 
 The server picks the gateway with `PAYMENT_GATEWAY` (`mock`, the default, or
 `razorpay`, test-mode keys). If `razorpay` is set but either key is empty, the
@@ -972,6 +1367,9 @@ Request: `purpose`, plus the fields of the mock endpoint for that purpose.
 | `tickets` | `tier` (integer, required), `quantity` (1 to 10, default 1), `event` (integer, optional; if sent it must be the tier's event) |
 | `merch` | `items` (required), exactly as in `POST /orders` |
 
+Every purpose also takes an optional `coupon` (see "Coupons"). `amount` in the
+response is then the discounted total.
+
 ```json
 { "purpose": "tickets", "event": 3, "tier": 7, "quantity": 2 }
 ```
@@ -1006,6 +1404,7 @@ Errors:
 | 400 | `amount_too_small` | Total under 100 paise, Razorpay's minimum. |
 | 409 | `sales_closed`, `sold_out` | Tickets, as for `POST /events/{id}/tickets`. |
 | 409 | `out_of_stock`, `product_unavailable` | Merch, as for `POST /orders`. |
+| 400 | `coupon_invalid` | The coupon cannot be used; no checkout is started. |
 | 409 | `idempotency_key_reused` | The key belongs to another user, a different purchase, a mock payment, or a checkout that is already paid or cancelled. |
 | 409 | `gateway_not_enabled` | The server is on the mock gateway. Use the mock endpoints. |
 | 502 | `gateway_unavailable` | Razorpay could not be reached or refused the request. Nobody was charged; the order is cancelled and the same key may be sent again. |
@@ -1036,7 +1435,7 @@ Request (all required):
 ```
 
 Response `201`: exactly the body of the mock endpoint for that purpose
-(`{order, payment, membership}`, `{order, payment, tickets}` or
+(`{order, payment, membership}`, `{order, payment, tickets, pass}` or
 `{order, payment}`), with `order.status` `paid`. Sending the same payment
 again returns `200` with the same body and creates nothing.
 
@@ -1052,6 +1451,7 @@ Errors:
 | 400 | `invalid_signature` | The signature does not match, or `razorpay_order_id` is not this order's. Nothing changes; the order stays as it was and can still be verified with the right values. |
 | 404 | `not_found` | No such order, another user's order, or an order that was not started through Razorpay. |
 | 409 | `sold_out` | The seats or stock (any one line) were gone by the time the payment arrived. Nothing is delivered; the order becomes `cancelled` with `needs_refund: true` and `payment_ref` set, and an audit row `order.refund_due` is written. Repeating the call gives the same `409`. Used for merch too (not `out_of_stock`). |
+| 409 | `coupon_limit_reached` | The order's coupon was used up by other buyers while this one was paying. Handled like `sold_out`: nothing delivered, `needs_refund: true`, audit row `order.refund_due` (its `after.reason` says which). |
 | 409 | `order_already_paid` | The order was already paid by a different payment id. |
 | 409 | `gateway_not_enabled` | The server is on the mock gateway. |
 
@@ -1079,11 +1479,18 @@ Errors:
 ## POST /products, PATCH /products/{id}, POST /products/{id}/restock
 
 - **Who:** President, treasurer or event manager.
-- **Product fields:** `name` (unique), `base_price` (required on create);
-  `description`, `active`. PATCH accepts any subset. The picture and stock cannot be
-  set here. **Assumption:** a new product gets all four sizes at zero stock.
-- **Restock:** `{ "size": "M", "quantity": 7 }`, quantity 1 to 10000. Adds to
-  stock, writes a stock movement and an audit-log row (`stock.restocked`).
+- **Product fields:** `name` (unique ignoring case, max 100), `base_price`
+  (required on create); `description`, `active`, `category` (default
+  `apparel`), `sale_pct` (0 to 90, default 0). PATCH accepts any subset. The
+  picture and stock cannot be set here.
+- **Sizes:** on create only, `sized` (boolean, default `true`).
+  **Assumption:** a sized product gets `S`, `M`, `L`, `XL`; with
+  `"sized": false` it gets the single size `ONE`. All start at zero stock,
+  and a product's sizes cannot be changed afterwards.
+- **Restock:** `{ "size": "M", "quantity": 7 }` (`"size": "ONE"` for a product
+  without sizes), quantity 1 to 10000. Adds to stock, writes a stock movement
+  and an audit-log row (`stock.restocked`). A size the product does not have
+  is `404`.
 
 Responses: the product object (`201` on create, otherwise `200`).
 Errors: `400 validation_error`, `401`, `403 permission_denied`, `404 not_found`.
@@ -1117,7 +1524,8 @@ One post reaches everyone. Requirement: R11.
   saved (status `queued`). Then each is emailed and its row marked `sent` or
   `failed` with the error. An email failure never loses the announcement.
 
-Request: `title` (max 200), `body`, optional `audience` (default `all`).
+Request: `title` (3 to 200 characters), `body` (3 to 5,000), optional `audience`
+(`all`, the default, or `members`).
 The author and time are set by the server.
 
 Response `201`: the announcement object with `deliveries` filled in. Check
@@ -1177,9 +1585,13 @@ Submit an expense with its receipt. Requirement: R18.
 - **Body:** `multipart/form-data` (the one endpoint that is not JSON), fields
   `amount`, `category`, `description`, `receipt_file`, and `event` or
   `fundraiser` as the category requires.
-- **Receipt:** JPG, PNG or PDF, at most 5 MB. The file's content is checked,
-  not just its name. Codes on `receipt_file`: `required`,
-  `unsupported_file_type`, `file_too_large`, `file_content_mismatch`.
+- **Amount and description:** `amount` 1 to 1,000,000,000 paise;
+  `description` 3 to 500 characters.
+- **Receipt:** JPG, PNG or PDF, at most 5 MB. Three things are checked: the
+  file name's extension, the content type the upload declares (`image/png`,
+  `image/jpeg`, `application/pdf`; **new**), and the file's first bytes. Codes
+  on `receipt_file`: `required`, `unsupported_file_type`, `file_too_large`,
+  `content_type_mismatch`, `file_content_mismatch`.
 - **Database:** one expense, always `submitted`, requester = the caller. No
   ledger entry yet.
 
@@ -1329,9 +1741,9 @@ record behind each entry.
 
 | `source.type` | For | `details` keys |
 |---|---|---|
-| `payment` | Membership dues | `order`, `member`, `plan`, `membership`, `amount` |
-| `order_line` | Tickets | `order`, `buyer`, `tickets` (each: `type`, `id`, `code`, `holder`, `price_paid`, `status`, `checked_in_at`) |
-| `order` | Merchandise | `order` (the order id, same as `source.id`), `buyer`, `items` (each: `product`, `size`, `qty`, `unit_price`, `discount`, `paid`) |
+| `payment` | Membership dues | `order`, `member`, `plan`, `membership`, `amount` (paid), `list_price`, `discount`, `coupon` (code or `null`), `coupon_discount` |
+| `order_line` | Tickets | `order`, `buyer`, `tickets` (each: `type`, `id`, `code`, `holder`, `price_paid`, `status`, `checked_in_at`), `list_price`, `discount`, `paid`, `coupon`, `coupon_discount` |
+| `order` | Merchandise | `order` (the order id, same as `source.id`), `buyer`, `items` (each: `product`, `size`, `qty`, `unit_price`, `discount`, `coupon_discount`, `paid`), `discount`, `coupon`, `coupon_discount` |
 | `expense_request` | Reimbursements | `description`, `requester`, `amount`, `status`, `receipt_url`, `approved_by` (the approver's name, or `null` if not approved) |
 | `fundraiser_sale` | Fundraiser takings | `fundraiser`, `amount`, `recorded_by` |
 
@@ -1366,6 +1778,11 @@ Requirements: R15, R16.
 | `POST /tasks`, `PATCH /tasks/{id}` | President, volunteer coordinator | `fundraiser` or `event`, `title`, `description`, `due_date`. Status is not editable here. |
 | `POST /tasks/{id}/assign` | President, volunteer coordinator | `{ "user", "role_note" }`. Assigning the same person again updates the note. |
 | `PATCH /tasks/{id}/status` | An assignee of that task, president, volunteer coordinator | `{ "status" }`. Anyone else: `403 permission_denied`. |
+
+Rules (see "Validation limits"): `goal_amount` and a sale's `amount` are 1 to
+1,000,000,000 paise; `ends_on` not before `starts_on` (`ends_before_start`);
+a task's `due_date`, when set or changed, cannot be in the past (`in_past`);
+a task belongs to exactly one fundraiser or event (`one_parent_required`).
 
 ---
 
@@ -1568,7 +1985,7 @@ exactly that action (for example `?action=expense.approved`).
 |---|---|---|
 | `id` | integer | |
 | `actor` | object or `null` | `{ "id", "name" }` of who did it; `null` if not recorded. |
-| `action` | string | One of: `role.assigned`, `stock.restocked`, `order.refund_due`, `expense.approved`, `expense.rejected`, `expense.paid`, `savefile.created`, `savefile.updated`. |
+| `action` | string | One of: `role.invited`, `role.assigned`, `role.invite_declined`, `role.invite_revoked`, `role.ended`, `stock.restocked`, `order.refund_due`, `expense.approved`, `expense.rejected`, `expense.paid`, `savefile.created`, `savefile.updated`. |
 | `object_type` | string | The kind of record, as `app.model`. |
 | `object_id` | integer | Its id. |
 | `before`, `after` | object or `null` | The changed values before and after. |

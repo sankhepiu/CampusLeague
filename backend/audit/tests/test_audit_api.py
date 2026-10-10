@@ -72,7 +72,7 @@ class AuditListTests(AuditApiTestCase):
         today = timezone.localdate().isoformat()
         self.client.post('/api/roles', {'user': self.member.id, 'role': 'treasurer', 'term_start': today, 'term_end': today}, format='json')
         newest = self.client.get(AUDIT).json()['results'][0]
-        self.assertEqual((newest['action'], newest['actor']['id'], newest['after']['role']), ('role.assigned', self.president.id, 'treasurer'))
+        self.assertEqual((newest['action'], newest['actor']['id'], newest['after']['role']), ('role.invited', self.president.id, 'treasurer'))
 
     def test_log_is_read_only_through_the_api(self):
         self.assert_error(self.client.post(AUDIT, {'action': 'forged'}, format='json'), 405, 'method_not_allowed')

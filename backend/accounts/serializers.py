@@ -8,7 +8,9 @@ from rest_framework.exceptions import ErrorDetail
 
 from members.services import membership_status
 
-from .models import RoleAssignment
+from common.validation import college_id_validator
+
+from .models import RoleAssignment, RoleInvite
 
 User = get_user_model()
 
@@ -40,8 +42,8 @@ class SignupSerializer(serializers.Serializer):
     # roles, id) is ignored, so signup can never grant privileges.
     email = serializers.EmailField(max_length=254)
     password = serializers.CharField(max_length=128, trim_whitespace=False, write_only=True)
-    name = serializers.CharField(max_length=150)
-    college_id = serializers.CharField(max_length=50)
+    name = serializers.CharField(max_length=150, min_length=2)
+    college_id = serializers.CharField(max_length=20, validators=[college_id_validator])
     # ASSUMPTION (plan lists phone without a format): optional; if given,
     # 7 to 15 digits with an optional leading +.
     phone = serializers.CharField(
@@ -118,3 +120,51 @@ class RoleAssignmentSerializer(serializers.ModelSerializer):
                 {'term_end': [ErrorDetail('The term cannot end before it starts.', code='term_end_before_start')]}
             )
         return attrs
+
+
+class RoleInviteCreateSerializer(serializers.Serializer):
+    """Body of POST /roles. The term is optional: one year from today."""
+
+    # Unverified or deactivated accounts are left out of the queryset, so
+    # they are reported the same way as a user that does not exist.
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True, email_verified=True))
+    role = serializers.ChoiceField(choices=RoleAssignment.Role.values)
+    term_start = serializers.DateField(required=False)
+    term_end = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        attrs.setdefault('term_start', today)
+        attrs.setdefault('term_end', attrs['term_start'] + timedelta(days=365))
+        if attrs['term_end'] < attrs['term_start']:
+            raise serializers.ValidationError(
+                {'term_end': [ErrorDetail('The term cannot end before it starts.', code='term_end_before_start')]}
+            )
+        if attrs['term_end'] < today:
+            raise serializers.ValidationError(
+                {'term_end': [ErrorDetail('This term is already over.', code='term_in_past')]}
+            )
+        return attrs
+
+
+class RoleInviteSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+    invited_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoleInvite
+        fields = [
+            'id', 'user', 'role', 'invited_by', 'status', 'term_start', 'term_end',
+            'expires_at', 'created_at', 'responded_at',
+        ]
+        read_only_fields = fields
+
+    def get_user(self, invite):
+        return {'id': invite.user_id, 'name': invite.user.name, 'email': invite.user.email}
+
+    def get_invited_by(self, invite):
+        return {'id': invite.invited_by_id, 'name': invite.invited_by.name}

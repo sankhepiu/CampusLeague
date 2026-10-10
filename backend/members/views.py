@@ -11,9 +11,9 @@ from rest_framework.views import APIView
 from accounts.models import RoleAssignment
 from accounts.permissions import has_role
 from events.tickets import sign_member
-from shop.api import IdempotencyKeyReused, PaymentFailed, idempotency_key
+from shop.api import PaymentFailed, idempotency_key, purchase_errors, require_mock_gateway
 from shop.models import Order
-from shop.payments import IdempotencyConflict, purchase_membership
+from shop.payments import purchase_membership
 from shop.serializers import OrderSerializer, PaymentSerializer
 
 from . import services
@@ -37,20 +37,20 @@ class MembershipPurchaseView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        require_mock_gateway()
         key = idempotency_key(request)
         serializer = MembershipPurchaseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
+        with purchase_errors():
             result = purchase_membership(
                 # The buyer is the token's user, never a value from the body.
                 user=request.user,
                 plan=serializer.validated_data['plan'],
                 outcome=serializer.validated_data['test_outcome'],
                 idempotency_key=key,
+                coupon=serializer.validated_data['coupon'],
             )
-        except IdempotencyConflict:
-            raise IdempotencyKeyReused()
 
         if result.order.status == Order.Status.CANCELLED:
             raise PaymentFailed()
