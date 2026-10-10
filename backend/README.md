@@ -61,8 +61,9 @@ Builds the Skyline Student Association: one user per role plus a second
 approver, 40 members (4 lapsed, 4 expiring soon), Basic and Plus plans, a past
 event with sales and check-ins, the Spring Gala with 12 General seats left,
 a small meetup, a hoodie and a T-shirt in four sizes (hoodie XL has 1 left),
-two past announcements, a bake-sale fundraiser with tasks, and seven expense
-requests (one left pending to approve live). Memberships and tickets are bought through the real
+two past announcements, a bake-sale fundraiser with tasks, seven expense
+requests (one left pending to approve live), and a Save File for the past
+event. Memberships and tickets are bought through the real
 purchase code, so every rupee has an order, a payment and a ledger entry.
 The logins are printed at the end. Priya is deliberately absent: sign her up
 live.
