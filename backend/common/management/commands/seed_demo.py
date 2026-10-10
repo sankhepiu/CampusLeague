@@ -5,6 +5,7 @@ from django.db import transaction
 
 from common import seed
 from events.models import Event, Ticket
+from finance import reports
 from finance.models import LedgerEntry
 from finance.services import account_balance
 from members.models import Membership
@@ -33,6 +34,7 @@ class Command(BaseCommand):
             if options['reset']:
                 seed.reset()
             data = seed.seed()
+        seed.remove_orphan_receipts()
 
         out = self.stdout.write
         out(self.style.SUCCESS('Demo data ready: Skyline Student Association'))
@@ -41,7 +43,12 @@ class Command(BaseCommand):
             f"   ledger entries {LedgerEntry.objects.count()}")
         out(f"  cash Rs {account_balance('1000') / 100:,.2f}"
             f"   dues Rs {account_balance('4000') / 100:,.2f}"
-            f"   ticket revenue Rs {account_balance('4100') / 100:,.2f}")
+            f"   ticket revenue Rs {account_balance('4100') / 100:,.2f}"
+            f"   merch revenue Rs {account_balance('4200') / 100:,.2f}")
+        check = reports.reconcile()
+        failed = [item['name'] for item in check['checks'] if not item['ok']]
+        out(f"  reconciliation: {len(check['checks']) - len(failed)} of {len(check['checks'])} checks pass"
+            + (f"  FAILING: {failed}" if failed else ''))
         out('')
         out(f'Demo logins (password for all: {seed.DEMO_PASSWORD})')
         for prefix, _, role in seed.LEADERS:

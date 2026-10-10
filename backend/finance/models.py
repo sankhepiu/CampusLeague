@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -36,10 +38,17 @@ class LedgerEntry(TimeStampedModel):
     class SourceType(models.TextChoices):
         PAYMENT = 'payment'
         ORDER_LINE = 'order_line'
+        ORDER = 'order'
+        EXPENSE_REQUEST = 'expense_request'
+        FUNDRAISER_SALE = 'fundraiser_sale'
 
     class Kind(models.TextChoices):
         MEMBERSHIP_DUES = 'membership_dues'
         TICKET_SALE = 'ticket_sale'
+        MERCH_SALE = 'merch_sale'
+        EXPENSE_APPROVED = 'expense_approved'
+        EXPENSE_PAID = 'expense_paid'
+        FUNDRAISER_SALE = 'fundraiser_sale'
 
     posted_at = models.DateTimeField(default=timezone.now)
     description = models.CharField(max_length=255)
@@ -101,3 +110,92 @@ class LedgerLine(TimeStampedModel):
     def __str__(self):
         side = f'Dr {self.debit}' if self.debit else f'Cr {self.credit}'
         return f'{self.account.code} {side}'
+
+
+def receipt_path(instance, filename):
+    # The uploader's file name is never used: a random name cannot collide,
+    # be guessed, or smuggle in a path. The extension is validated before
+    # this runs.
+    extension = filename.rsplit('.', 1)[-1].lower()
+    return f'receipts/{uuid.uuid4().hex}.{extension}'
+
+
+class ExpenseRequest(TimeStampedModel):
+    """Plan, data model: "ExpenseRequest: requester FK, amount, category,
+    event FK (optional), fundraiser FK (optional), description, receipt_file,
+    status (submitted, approved, rejected, paid)".
+
+    status changes only in finance.expenses (approve, reject, mark_paid),
+    which also posts the ledger entry in the same transaction.
+    """
+
+    class Status(models.TextChoices):
+        SUBMITTED = 'submitted'
+        APPROVED = 'approved'
+        REJECTED = 'rejected'
+        PAID = 'paid'
+
+    class Category(models.TextChoices):
+        # ASSUMPTION (plan says "expense account (by category)" without
+        # listing categories): one per expense account in the starter list.
+        EVENT = 'event'              # 5000 Event expenses
+        FUNDRAISER = 'fundraiser'    # 5100 Fundraiser expenses
+        GENERAL = 'general'          # 5200 General club expenses
+
+    requester = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='expense_requests')
+    amount = models.BigIntegerField()
+    category = models.CharField(max_length=10, choices=Category.choices)
+    event = models.ForeignKey('events.Event', null=True, blank=True, on_delete=models.PROTECT, related_name='expense_requests')
+    fundraiser = models.ForeignKey(
+        'volunteering.Fundraiser', null=True, blank=True, on_delete=models.PROTECT, related_name='expense_requests',
+    )
+    description = models.CharField(max_length=500)
+    receipt_file = models.FileField(upload_to=receipt_path, max_length=200)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.SUBMITTED)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='expense_amount_positive'),
+            models.CheckConstraint(
+                condition=models.Q(status__in=['submitted', 'approved', 'rejected', 'paid']),
+                name='expense_status_is_known',
+            ),
+            # The category decides which tag is required, so an expense can
+            # always be attributed for event and fundraiser P&L.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(category='event', event__isnull=False, fundraiser__isnull=True)
+                    | models.Q(category='fundraiser', fundraiser__isnull=False, event__isnull=True)
+                    | models.Q(category='general', event__isnull=True, fundraiser__isnull=True)
+                ),
+                name='expense_category_matches_its_tag',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Expense #{self.pk} ({self.status})'
+
+
+class Approval(TimeStampedModel):
+    """Plan, data model: "Approval: expense FK, approver FK, decision,
+    reason, decided_at. Approver must differ from requester."
+    """
+
+    class Decision(models.TextChoices):
+        APPROVED = 'approved'
+        REJECTED = 'rejected'
+
+    # One-to-one: a request is decided exactly once.
+    expense = models.OneToOneField(ExpenseRequest, on_delete=models.PROTECT, related_name='approval')
+    approver = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    decision = models.CharField(max_length=10, choices=Decision.choices)
+    reason = models.CharField(max_length=500, blank=True)
+    decided_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(decision__in=['approved', 'rejected']), name='approval_decision_is_known',
+            ),
+        ]

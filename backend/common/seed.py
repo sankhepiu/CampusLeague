@@ -11,26 +11,43 @@ What is NOT genuine, and why:
   - Membership dates are shifted after purchase to create lapsed and
     expiring members. The ledger entry keeps today's date; the ledger is
     append-only and has no way to backdate.
-  - Events, tiers, plans and role assignments are created directly; there
-    is no service function for them, only API validation.
+  - Events, tiers, plans, products and role assignments are created
+    directly; there is no service function for them, only API validation.
+  - Expense requests are created directly with a generated placeholder
+    receipt image (the API's only extra step is validating the upload);
+    every approval, rejection and payout goes through finance.expenses.
+  - The two past announcements go through the real publish and send code,
+    but with a sender that discards the message, so resetting does not
+    print 90 emails. Their deliveries read "sent" although nothing left
+    the machine, and their dates are moved into the past afterwards.
 """
 import os
+import struct
+import zlib
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.contrib.auth.hashers import make_password
+from django.core.files.base import ContentFile
 from django.db import connection, transaction
 from django.utils import timezone
 
 from accounts.models import RoleAssignment
 from audit.models import AuditLog
+from comms import services as comms
+from comms.models import Announcement, AnnouncementDelivery
 from events import tickets
 from events.models import CheckIn, Event, Ticket, TicketTier
-from finance.models import LedgerEntry, LedgerLine
+from finance import expenses
+from finance.models import Approval, ExpenseRequest, LedgerEntry, LedgerLine
 from members.models import Membership, MembershipPlan
 from members.services import add_months
-from shop.models import Order, OrderLine, Payment
-from shop.payments import purchase_membership, purchase_tickets
+from shop import stock
+from shop.models import Order, OrderLine, Payment, Product, ProductSize, StockMovement
+from shop.payments import purchase_membership, purchase_merch, purchase_tickets
+from volunteering.models import Fundraiser, FundraiserSale, Task, TaskAssignment
+from volunteering.services import record_sale
 
 User = get_user_model()
 
@@ -42,7 +59,9 @@ DOMAIN = 'skyline.test'
 # Wiped by reset. finance.LedgerAccount is deliberately absent: the chart of
 # accounts is reference data created by a migration.
 RESET_MODELS = [
-    AuditLog, CheckIn, Ticket, LedgerLine, LedgerEntry, Payment, OrderLine, Order,
+    AuditLog, AnnouncementDelivery, Announcement, Approval, ExpenseRequest, FundraiserSale,
+    TaskAssignment, Task, Fundraiser, CheckIn, Ticket, LedgerLine, LedgerEntry,
+    StockMovement, Payment, OrderLine, Order, ProductSize, Product,
     TicketTier, Event, Membership, MembershipPlan, RoleAssignment, User,
 ]
 
@@ -85,6 +104,38 @@ def reset():
     tables = ', '.join(connection.ops.quote_name(model._meta.db_table) for model in RESET_MODELS)
     with connection.cursor() as cursor:
         cursor.execute(f'TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE')
+
+
+def remove_orphan_receipts():
+    """Delete receipt files no expense request points at any more.
+
+    Files are not covered by the database transaction, so this runs only
+    after reset and seed have committed: a failed seed leaves both the old
+    rows and their files in place.
+    """
+    folder = os.path.join(settings.MEDIA_ROOT, 'receipts')
+    if not os.path.isdir(folder):
+        return 0
+    in_use = {os.path.basename(name) for name in ExpenseRequest.objects.values_list('receipt_file', flat=True)}
+    stale = [name for name in os.listdir(folder) if name not in in_use]
+    for name in stale:
+        os.remove(os.path.join(folder, name))
+    return len(stale)
+
+
+def _placeholder_receipt(width=160, height=220):
+    """A small, valid grey PNG to stand in for a photographed receipt."""
+    def chunk(kind, data):
+        body = kind + data
+        return struct.pack('>I', len(data)) + body + struct.pack('>I', zlib.crc32(body))
+
+    row = b'\x00' + b'\xe6' * width                    # filter byte + one grey pixel per column
+    return (
+        b'\x89PNG\r\n\x1a\n'
+        + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 0, 0, 0, 0))
+        + chunk(b'IDAT', zlib.compress(row * height))
+        + chunk(b'IEND', b'')
+    )
 
 
 def _user(prefix, name, college_id, password_hash, **extra):
@@ -195,6 +246,82 @@ def seed():
         capacity_total=25, status=Event.Status.ON_SALE, budget_amount=150000,
     )
     TicketTier.objects.create(event=meetup, name='Entry', public_price=10000, member_price=5000, capacity=25)
+
+    # Merchandise ----------------------------------------------------------
+    # (name, price, description, {size: (restocked, sold)})
+    catalogue = [
+        ('Skyline Hoodie', 120000, 'Heavyweight fleece with the club crest.',
+         {'S': (10, 2), 'M': (8, 3), 'L': (8, 2), 'XL': (3, 2)}),       # XL: 1 left
+        ('Skyline T-Shirt', 40000, 'Cotton tee, club colours.',
+         {'S': (15, 0), 'M': (20, 4), 'L': (15, 2), 'XL': (10, 0)}),
+    ]
+    shoppers = iter(active * 2)
+    for name, price, description, sizes in catalogue:
+        product = Product.objects.create(name=name, base_price=price, description=description)
+        for size, (restocked, sold) in sizes.items():
+            row = ProductSize.objects.create(product=product, size=size)
+            stock.restock(product_size=row, quantity=restocked, actor=leaders['treasurer'])
+            for number in range(sold):
+                purchase_merch(
+                    user=next(shoppers), items={row.pk: 1}, outcome='success',
+                    idempotency_key=f'seed-merch-{row.pk:03}-{number:02}',
+                )
+
+    # Announcements --------------------------------------------------------
+    past_posts = [
+        (20, leaders['president'], 'Welcome to the new term',
+         'Memberships for the year are open. Join from the Plans page to get member prices.'),
+        (6, leaders['events'], 'Spring Gala tickets are live',
+         'General and VIP tickets are on sale now. Members pay less, and seats are limited.'),
+    ]
+    for days_ago, author, title, body in past_posts:
+        announcement = comms.publish(author=author, title=title, body=body)
+        comms.send_pending(announcement, send=lambda delivery: None)
+        Announcement.objects.filter(pk=announcement.pk).update(published_at=now - timedelta(days=days_ago))
+
+    # Bake sale fundraiser: tasks with owners, goal bar about half full ----
+    bake_sale = Fundraiser.objects.create(
+        title='Bake Sale', goal_amount=1500000,
+        starts_on=today - timedelta(days=6), ends_on=today + timedelta(days=8),
+    )
+    for title, status, owners in [
+        ('Baking', 'done', [(members[1], 'Brownies'), (members[2], 'Cookies')]),
+        ('Supplies', 'doing', [(members[3], 'Boxes and napkins')]),
+        ('Table', 'todo', [(members[5], 'Saturday shift')]),
+        ('Posters', 'todo', []),                                    # nobody yet
+    ]:
+        task = Task.objects.create(fundraiser=bake_sale, title=title, status=status, due_date=today + timedelta(days=3))
+        for owner, note in owners:
+            TaskAssignment.objects.create(task=task, user=owner, role_note=note)
+    for amount, note in [(250000, 'Day 1 stall'), (310000, 'Day 2 stall'), (180000, 'Pre-orders')]:
+        record_sale(fundraiser=bake_sale, amount=amount, recorded_by=leaders['volunteers'], note=note)
+
+    # Expenses: paid, approved, rejected, and one waiting for the live demo
+    treasurer, second = leaders['treasurer'], leaders['approver']
+    receipt = _placeholder_receipt()
+
+    def expense(requester, amount, description, category='event', event=None, fundraiser=None):
+        request = ExpenseRequest(
+            requester=requester, amount=amount, description=description,
+            category=category, event=event, fundraiser=fundraiser,
+        )
+        request.receipt_file.save('receipt.png', ContentFile(receipt), save=True)
+        return request
+
+    for requester, amount, description, event, outcome in [
+        (members[6], 250000, 'Sound system hire', freshers, 'paid'),
+        (members[7], 80000, 'Decorations', freshers, 'paid'),
+        (members[8], 120000, 'Snacks and water', freshers, 'approved'),
+        (leaders['events'], 500000, 'Venue deposit', gala, 'paid'),
+    ]:
+        request = expense(requester, amount, description, event=event)
+        expenses.approve(request.pk, treasurer, 'Receipt matches')
+        if outcome == 'paid':
+            expenses.mark_paid(request.pk, second)
+    expenses.approve(expense(members[1], 15000, 'Baking ingredients', 'fundraiser', fundraiser=bake_sale).pk, second)
+    expenses.reject(expense(members[9], 4500, 'Printer ink', 'general').pk, treasurer, 'Not agreed beforehand')
+    # Left as submitted: approve it live as the treasurer.
+    expense(members[4], 35000, 'Stage flowers', event=gala)
 
     return {
         'admin': admin, 'leaders': leaders, 'members': members,

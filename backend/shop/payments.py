@@ -18,9 +18,10 @@ from events.tickets import SoldOut, issue_tickets
 from finance.models import LedgerEntry
 from finance.services import post_entry
 from members.models import Membership
-from members.services import membership_status, start_membership
+from members.services import current_membership, membership_status, start_membership
 
-from .models import Order, OrderLine, Payment
+from .models import Order, OrderLine, Payment, ProductSize
+from .stock import OutOfStock, take_stock
 
 User = get_user_model()
 
@@ -29,6 +30,7 @@ OUTCOMES = [SUCCESS, FAILURE, PENDING]
 
 CASH = '1000'
 MEMBERSHIP_DUES_REVENUE = '4000'
+MERCH_REVENUE = '4200'
 
 
 class IdempotencyConflict(Exception):
@@ -83,18 +85,36 @@ def process_payment(order, outcome, idempotency_key):
     order.payment_ref = gateway_ref
     order.save(update_fields=['status', 'payment_ref', 'updated_at'])
 
-    for line in order.lines.select_related('order__buyer', 'plan', 'tier__event'):
+    lines = list(order.lines.select_related('order__buyer', 'plan', 'tier__event', 'product_size__product'))
+    for line in lines:
         _fulfil(line, payment)
+
+    # Plan posting rule: merch order paid -> debit Cash, credit Merchandise
+    # revenue, source reference "Order": one entry for the whole order, at
+    # the amount actually paid (after member discount).
+    merch_paid = sum(line.amount for line in lines if line.kind == OrderLine.Kind.MERCH)
+    if merch_paid:
+        post_entry(
+            description=f'Merchandise order #{order.pk}',
+            source_type=LedgerEntry.SourceType.ORDER,
+            source_id=order.pk,
+            kind=LedgerEntry.Kind.MERCH_SALE,
+            created_by=order.buyer,
+            lines=[(CASH, merch_paid, 0), (MERCH_REVENUE, 0, merch_paid)],
+        )
     return payment
 
 
 def _fulfil(line, payment):
-    """Deliver what a paid line bought and post its ledger entry."""
+    """Deliver what a paid line bought (and, for memberships and tickets,
+    post its ledger entry; merch is posted once per order by the caller).
+    """
     if line.kind == OrderLine.Kind.TICKET:
         issue_tickets(line, payment)
         return
-    if line.kind != OrderLine.Kind.MEMBERSHIP:
-        raise NotImplementedError(f'No fulfilment for {line.kind} lines yet.')
+    if line.kind == OrderLine.Kind.MERCH:
+        take_stock(line)
+        return
 
     order = line.order
     line.membership = start_membership(order.buyer, line.plan)
@@ -114,38 +134,39 @@ def _fulfil(line, payment):
     )
 
 
-def _replay(user, idempotency_key, **wanted):
+def _result(order, payment, lines, replayed=False):
+    return PurchaseResult(
+        order=order, payment=payment,
+        membership=next((line.membership for line in lines if line.membership_id), None),
+        tickets=list(order.tickets.select_related('event', 'tier').order_by('id')),
+        replayed=replayed,
+    )
+
+
+def _replay(user, idempotency_key, same_purchase):
     """If this key already paid for exactly this purchase, return that first
     result. None if the key is unused.
 
-    wanted describes the single order line the request asks for, for example
-    kind='membership', plan_id=3.
+    same_purchase(lines) says whether an existing order's lines are what the
+    current request is asking for.
     """
     payment = Payment.objects.select_related('order').filter(idempotency_key=idempotency_key).first()
     if payment is None:
         return None
     order = payment.order
     lines = list(order.lines.select_related('membership__plan'))
-    same_purchase = (
-        order.buyer_id == user.pk
-        and len(lines) == 1
-        and all(getattr(lines[0], name) == value for name, value in wanted.items())
-    )
-    if not same_purchase:
+    if order.buyer_id != user.pk or not same_purchase(lines):
         # Never hand one user's order to another, or pretend a different
         # purchase was made.
         raise IdempotencyConflict()
-    return PurchaseResult(
-        order=order, payment=payment, membership=lines[0].membership,
-        tickets=list(order.tickets.select_related('event', 'tier').order_by('id')), replayed=True,
-    )
+    return _result(order, payment, lines, replayed=True)
 
 
-def _purchase(*, user, idempotency_key, outcome, wanted, build_line):
+def _purchase(*, user, idempotency_key, outcome, same_purchase, build_lines):
     """Shared purchase skeleton: lock, replay check, order, payment.
 
-    build_line() runs inside the transaction after the buyer is locked. It
-    returns the fields of the one order line to create (and may take further
+    build_lines() runs inside the transaction after the buyer is locked. It
+    returns the fields of each order line to create (and may take further
     locks and raise to refuse the sale before anything is written).
 
     ASSUMPTION (plan covers only a successful replay): a key whose attempt
@@ -160,30 +181,37 @@ def _purchase(*, user, idempotency_key, outcome, wanted, build_line):
             # keeps two simultaneous renewals from getting the same dates.
             User.objects.select_for_update().get(pk=user.pk)
 
-            replay = _replay(user, idempotency_key, **wanted)
+            replay = _replay(user, idempotency_key, same_purchase)
             if replay is not None:
                 return replay
 
-            line_fields = build_line()
-            amount = line_fields['qty'] * line_fields['unit_price']
-            order = Order.objects.create(buyer=user, subtotal=amount, discount=0, total=amount)
-            line = OrderLine.objects.create(order=order, **line_fields)
-            payment = process_payment(order, outcome, idempotency_key)
-            line.refresh_from_db()
-            return PurchaseResult(
-                order=order, payment=payment, membership=line.membership,
-                tickets=list(order.tickets.select_related('event', 'tier').order_by('id')),
+            line_fields = build_lines()
+            subtotal = sum(fields['qty'] * fields['unit_price'] for fields in line_fields)
+            discount = sum(fields.get('discount', 0) for fields in line_fields)
+            order = Order.objects.create(
+                buyer=user, subtotal=subtotal, discount=discount, total=subtotal - discount,
             )
+            for fields in line_fields:
+                OrderLine.objects.create(order=order, **fields)
+            payment = process_payment(order, outcome, idempotency_key)
+            return _result(order, payment, list(order.lines.select_related('membership__plan')))
     except IntegrityError:
         # Two different users sent the same key at the same moment: the
         # unique constraint stopped the second, and everything it had done
         # was rolled back. _replay now sees the winner's payment and raises
         # IdempotencyConflict. If the key is still unused, the IntegrityError
         # was about something else and is re-raised.
-        replay = _replay(user, idempotency_key, **wanted)
+        replay = _replay(user, idempotency_key, same_purchase)
         if replay is not None:
             return replay
         raise
+
+
+def _single_line(**wanted):
+    """Replay matcher for purchases that are exactly one order line."""
+    def same_purchase(lines):
+        return len(lines) == 1 and all(getattr(lines[0], name) == value for name, value in wanted.items())
+    return same_purchase
 
 
 def purchase_membership(*, user, plan, outcome, idempotency_key):
@@ -194,8 +222,8 @@ def purchase_membership(*, user, plan, outcome, idempotency_key):
     kind = OrderLine.Kind.MEMBERSHIP
     return _purchase(
         user=user, idempotency_key=idempotency_key, outcome=outcome,
-        wanted={'kind': kind, 'plan_id': plan.pk},
-        build_line=lambda: {'kind': kind, 'plan': plan, 'qty': 1, 'unit_price': plan.price},
+        same_purchase=_single_line(kind=kind, plan_id=plan.pk),
+        build_lines=lambda: [{'kind': kind, 'plan': plan, 'qty': 1, 'unit_price': plan.price}],
     )
 
 
@@ -215,7 +243,7 @@ def purchase_tickets(*, user, tier_id, quantity, outcome, idempotency_key):
     """
     kind = OrderLine.Kind.TICKET
 
-    def build_line():
+    def build_lines():
         # Row lock on the tier, held until this transaction ends. A second
         # buyer of the same tier waits here and then reads the updated
         # sold_count, so two buyers can never both see "1 seat left".
@@ -233,10 +261,76 @@ def purchase_tickets(*, user, tier_id, quantity, outcome, idempotency_key):
         # for every outcome so no pointless order is created.
         if tier.seats_left < quantity:
             raise SoldOut()
-        return {'kind': kind, 'tier': tier, 'qty': quantity, 'unit_price': ticket_price(tier, user)}
+        return [{'kind': kind, 'tier': tier, 'qty': quantity, 'unit_price': ticket_price(tier, user)}]
 
     return _purchase(
         user=user, idempotency_key=idempotency_key, outcome=outcome,
-        wanted={'kind': kind, 'tier_id': tier_id, 'qty': quantity},
-        build_line=build_line,
+        same_purchase=_single_line(kind=kind, tier_id=tier_id, qty=quantity),
+        build_lines=build_lines,
+    )
+
+
+def merch_discount_pct(user):
+    """Team decision: merch uses the plan's merch_discount_pct, for a buyer
+    whose membership is active at purchase time. 0 for everyone else.
+    """
+    membership = current_membership(user)
+    return membership.plan.merch_discount_pct if membership else 0
+
+
+def merch_line_discount(base_price, quantity, pct):
+    """Discount for one line, in whole paise.
+    ASSUMPTION (plan is silent on rounding): rounded down, so a fraction of
+    a paisa is never given away.
+    """
+    return base_price * quantity * pct // 100
+
+
+class ProductUnavailable(Exception):
+    """A requested size does not exist or its product is not active."""
+
+
+def purchase_merch(*, user, items, outcome, idempotency_key):
+    """Buy merchandise: order with one line per size, payment, stock
+    decrement with StockMovements, and one ledger entry for the order.
+
+    items is {product_size_id: quantity}. Raises OutOfStock or
+    ProductUnavailable before anything is written.
+    """
+    kind = OrderLine.Kind.MERCH
+    wanted = sorted(items.items())
+
+    def same_purchase(lines):
+        return (
+            all(line.kind == kind for line in lines)
+            and sorted((line.product_size_id, line.qty) for line in lines) == wanted
+        )
+
+    def build_lines():
+        # Row locks on every size in the order, always taken in id order so
+        # two orders for the same sizes cannot deadlock. A second buyer of
+        # the last hoodie waits here and then reads the reduced stock.
+        sizes = {
+            size.pk: size
+            for size in ProductSize.objects.select_for_update(of=('self',))
+            .select_related('product').filter(pk__in=items).order_by('pk')
+        }
+        pct = merch_discount_pct(user)
+        lines = []
+        for size_id, quantity in wanted:
+            size = sizes.get(size_id)
+            if size is None or not size.product.active:
+                raise ProductUnavailable()
+            if size.stock < quantity:
+                raise OutOfStock(size)
+            price = size.product.base_price
+            lines.append({
+                'kind': kind, 'product_size': size, 'qty': quantity, 'unit_price': price,
+                'discount': merch_line_discount(price, quantity, pct),
+            })
+        return lines
+
+    return _purchase(
+        user=user, idempotency_key=idempotency_key, outcome=outcome,
+        same_purchase=same_purchase, build_lines=build_lines,
     )
