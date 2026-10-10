@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import APIException
@@ -11,10 +12,10 @@ from accounts.permissions import has_role
 
 from . import stock
 from .api import IdempotencyKeyReused, PaymentFailed, idempotency_key
-from .models import Order, Product, ProductSize
+from .models import Order, OrderLine, Product, ProductSize
 from .payments import IdempotencyConflict, ProductUnavailable, merch_discount_pct, purchase_merch
 from .serializers import (
-    MerchOrderSerializer, OrderSerializer, PaymentSerializer, ProductSerializer,
+    ORDER_LINE_LABEL_RELATIONS, MerchOrderSerializer, OrderSerializer, PaymentSerializer, ProductSerializer,
     ProductWriteSerializer, RestockSerializer,
 )
 
@@ -149,4 +150,12 @@ class MyOrdersView(ListAPIView):
     serializer_class = OrderSerializer
 
     def get_queryset(self):
-        return Order.objects.filter(buyer=self.request.user).prefetch_related('lines').order_by('-created_at', '-id')
+        # One query for the page of orders and one for all their lines, with
+        # the plan, tier, event, size and product each line's label needs
+        # joined in. Without the joins every line would cost extra queries.
+        lines = OrderLine.objects.select_related(*ORDER_LINE_LABEL_RELATIONS).order_by('id')
+        return (
+            Order.objects.filter(buyer=self.request.user)
+            .prefetch_related(Prefetch('lines', queryset=lines))
+            .order_by('-created_at', '-id')
+        )

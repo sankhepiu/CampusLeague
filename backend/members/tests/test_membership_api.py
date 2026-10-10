@@ -106,7 +106,7 @@ class SuccessfulPurchaseTests(PurchaseTestCase):
         )
         self.assertEqual(body['order']['payment_ref'], payment.gateway_ref)
         self.assertEqual(body['order']['lines'], [{
-            'id': OrderLine.objects.get().id, 'kind': 'membership',
+            'id': OrderLine.objects.get().id, 'kind': 'membership', 'label': 'Basic membership',
             'plan': self.plan.id, 'tier': None, 'product_size': None,
             'qty': 1, 'unit_price': 50000, 'discount': 0,
         }])

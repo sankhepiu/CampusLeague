@@ -10,11 +10,26 @@ MAX_QTY_PER_ITEM = 10
 MAX_ITEMS_PER_ORDER = 20
 
 
+# Everything OrderLineSerializer.get_label reads. Views that list many orders
+# prefetch lines with these joins, so labels cost no extra queries.
+ORDER_LINE_LABEL_RELATIONS = ('plan', 'tier__event', 'product_size__product')
+
+
 class OrderLineSerializer(serializers.ModelSerializer):
+    # What was bought, in words, so the client need not look up the ids.
+    label = serializers.SerializerMethodField()
+
     class Meta:
         model = OrderLine
-        fields = ['id', 'kind', 'plan', 'tier', 'product_size', 'qty', 'unit_price', 'discount']
+        fields = ['id', 'kind', 'label', 'plan', 'tier', 'product_size', 'qty', 'unit_price', 'discount']
         read_only_fields = fields
+
+    def get_label(self, line):
+        if line.kind == OrderLine.Kind.MEMBERSHIP:
+            return f'{line.plan.name} membership'
+        if line.kind == OrderLine.Kind.TICKET:
+            return f'{line.tier.event.title} · {line.tier.name}'
+        return f'{line.product_size.product.name} · {line.product_size.size}'
 
 
 class OrderSerializer(serializers.ModelSerializer):
