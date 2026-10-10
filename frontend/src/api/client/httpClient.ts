@@ -28,17 +28,30 @@ async function parseErrorBody(response: Response): Promise<ApiError> {
   return toApiError(`HTTP_${response.status}`, response.statusText || 'Request failed');
 }
 
+function buildUrl(path: string, query?: RequestOptions['query']): string {
+  const url = `${env.apiBaseUrl}${path}`;
+  if (!query) return url;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) params.set(key, String(value));
+  }
+  const qs = params.toString();
+  return qs ? `${url}?${qs}` : url;
+}
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const token = session.getToken();
 
   try {
-    const response = await fetch(`${env.apiBaseUrl}${path}`, {
+    const response = await fetch(buildUrl(path, options.query), {
       method: options.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // Django REST's TokenAuthentication expects "Token <key>", not "Bearer".
+        ...(token ? { Authorization: `Token ${token}` } : {}),
+        ...options.headers,
       },
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: options.signal ?? controller.signal,
@@ -46,7 +59,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
     if (response.status === 401) {
       onUnauthorized?.();
-      throw new ApiRequestError(toApiError('UNAUTHORIZED', 'Your session has expired. Please log in again.'));
+      throw new ApiRequestError(toApiError('not_authenticated', 'Your session has expired. Please log in again.'));
     }
 
     if (!response.ok) {
@@ -61,9 +74,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   } catch (err) {
     if (err instanceof ApiRequestError) throw err;
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new ApiRequestError(toApiError('TIMEOUT', 'The request took too long. Please try again.'));
+      throw new ApiRequestError(toApiError('timeout', 'The request took too long. Please try again.'));
     }
-    throw new ApiRequestError(toApiError('NETWORK_ERROR', 'Could not reach the server. Check your connection.'));
+    throw new ApiRequestError(toApiError('network_error', 'Could not reach the server. Check your connection.'));
   } finally {
     clearTimeout(timeout);
   }

@@ -97,6 +97,17 @@ button {
   animation: cl-fade-rise 0.28s ease-out both;
 }
 
+/* Font choice from OptionsProvider (Settings page), mirrored onto <html>.
+   Default --cl-font-body (Pixelify Sans) lives in _variables.scss; these
+   override it per choice. Press Start 2P (titles/small UI) never changes. */
+html[data-font='vt323'] {
+  --cl-font-body: 'VT323', 'Courier New', monospace;
+}
+
+html[data-font='silkscreen'] {
+  --cl-font-body: 'Silkscreen', 'Courier New', monospace;
+}
+
 /* Reduced-motion toggle from OptionsProvider, mirrored onto <html> so any
    CSS animation/transition can be disabled with one selector instead of each
    component re-reading context. Static 3D transforms (the Start screen floor,

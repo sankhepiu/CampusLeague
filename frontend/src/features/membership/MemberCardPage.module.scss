@@ -1,0 +1,57 @@
+.card {
+  max-width: 26rem;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.name {
+  font-family: var(--cl-font-pixel);
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.statusRow {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.qrWrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.detail {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 2px solid var(--cl-color-bg-raised);
+  font-size: 0.9rem;
+}
+
+.detail:last-child {
+  border-bottom: none;
+}
+
+.detailLabel {
+  color: var(--cl-color-text-muted);
+}
+
+.benefits {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  text-align: left;
+}
+
+.benefits li {
+  font-size: 0.9rem;
+  color: var(--cl-color-text-muted);
+  padding: 0.25rem 0;
+}
+
+.benefits li::before {
+  content: '— ';
+  color: var(--cl-color-success);
+}

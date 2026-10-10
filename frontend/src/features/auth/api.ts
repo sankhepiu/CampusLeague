@@ -5,4 +5,4 @@ import { realAuthApi } from './api.real';
 /** Same typed surface regardless of mode — components never branch on env.useMockApi. */
 export const authApi = env.useMockApi ? mockAuthApi : realAuthApi;
 
-export type { AuthUser, LoginRequest, LoginResponse, SignupRequest, SignupResponse } from './types';
+export type { AuthResponse, AuthUser, LoginRequest, MembershipStatus, SignupRequest } from './types';

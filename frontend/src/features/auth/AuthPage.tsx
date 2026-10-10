@@ -9,8 +9,14 @@ import type { ApiError } from '../../api/client';
 import { env } from '../../core/config/env';
 import { useAuth } from '../../core/hooks/useAuth';
 import { mockAuthApi } from './api.mock';
+import { demoAccountLabel } from './mockUsers';
 import { isValidEmail, MIN_PASSWORD_LENGTH } from './validation';
 import styles from './AuthPage.module.scss';
+
+// The server reports fields by their wire (snake_case) name; our form state
+// uses camelCase, so translate before matching a server error to a field.
+const SERVER_FIELD_TO_FORM_FIELD: Record<string, string> = { college_id: 'collegeId' };
+const toFormField = (field: string) => SERVER_FIELD_TO_FORM_FIELD[field] ?? field;
 
 type Tab = 'login' | 'signup';
 type Phase = 'idle' | 'submitting' | 'success';
@@ -104,8 +110,14 @@ export function AuthPage({ initialTab }: AuthPageProps) {
       setPhase('idle');
       setRedirectReady(true);
       const apiError = err as ApiError;
-      if (apiError?.field) {
-        setFieldErrors({ [apiError.field]: apiError.message });
+      if (apiError?.errors && apiError.errors.length > 0) {
+        const perField: Record<string, string> = {};
+        for (const fieldError of apiError.errors) {
+          perField[toFormField(fieldError.field)] = fieldError.message;
+        }
+        setFieldErrors(perField);
+      } else if (apiError?.field) {
+        setFieldErrors({ [toFormField(apiError.field)]: apiError.message });
       } else {
         setGeneralError(apiError?.message ?? 'Something went wrong. Please try again.');
       }
@@ -259,7 +271,7 @@ export function AuthPage({ initialTab }: AuthPageProps) {
                     setLoginForm({ email: account.email, password: 'demo' });
                   }}
                 >
-                  <span className={styles.demoRole}>{account.roles[0]}</span>
+                  <span className={styles.demoRole}>{demoAccountLabel(account)}</span>
                   <span className={styles.demoEmail}>{account.email}</span>
                 </button>
               ))}

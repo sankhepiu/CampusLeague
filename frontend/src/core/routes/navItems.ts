@@ -16,6 +16,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'orders', path: '/orders', label: 'Orders', icon: 'chest' },
   { key: 'volunteering', path: '/volunteering', label: 'Volunteering', icon: 'trophy' },
   { key: 'announcements', path: '/announcements', label: 'Announcements', icon: 'badge' },
+  { key: 'members', path: '/members', label: 'Members', icon: 'badge' },
   { key: 'checkin', path: '/checkin', label: 'Check-in', icon: 'badge' },
   { key: 'expenses', path: '/expenses', label: 'Expenses', icon: 'coin' },
   { key: 'finance', path: '/finance', label: 'Finance', icon: 'coin' },
@@ -24,5 +25,8 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export function navItemsForRoles(roles: string[]): NavItem[] {
-  return NAV_ITEMS.filter((item) => FEATURE_ACCESS[item.key].some((r) => roles.includes(r)));
+  return NAV_ITEMS.filter((item) => {
+    const required = FEATURE_ACCESS[item.key];
+    return required === null || required.some((r) => roles.includes(r));
+  });
 }

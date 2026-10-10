@@ -6,7 +6,7 @@ import { Spinner } from '../../components/Spinner/Spinner';
 import { UnauthorizedScreen } from './UnauthorizedScreen';
 
 interface ProtectedRouteProps {
-  roles?: Role[];
+  roles?: Role[] | null;
   children: ReactNode;
 }
 
