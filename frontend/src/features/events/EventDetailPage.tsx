@@ -8,19 +8,23 @@ import { Money } from '../../components/Money/Money';
 import { StatusBadge } from '../../components/StatusBadge/StatusBadge';
 import { ReplayNote, TestPayment } from '../../components/TestPayment/TestPayment';
 import { isRetryablePaymentError } from '../../components/TestPayment/paymentErrors';
+import { RazorpayPayButton } from '../../components/RazorpayPayButton/RazorpayPayButton';
 import { PnlCard } from '../../components/PnlCard/PnlCard';
 import type { ApiError } from '../../api/client';
 import { useAsync } from '../../core/hooks/useAsync';
 import { useAuth } from '../../core/hooks/useAuth';
+import { usePaymentsConfig } from '../../core/hooks/usePaymentsConfig';
 import { accentVarForFeature } from '../../core/config/accents';
 import { formatDateTime } from '../../core/utils/formatDateTime';
 import { eventsApi } from './api';
 import { ticketsApi } from '../tickets/api';
+import { razorpayErrorMessage } from '../payments/errors';
+import type { RazorpayVerifyFields } from '../payments/types';
 import type { PaymentTestOutcome, PurchaseTicketsResult } from '../tickets/types';
 import type { Tier } from './types';
 import styles from './EventDetailPage.module.scss';
 
-type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error';
+type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error' | 'cancelled';
 
 function tierAvailability(tier: Tier): { available: boolean; reason?: string } {
   const now = Date.now();
@@ -35,6 +39,7 @@ export function EventDetailPage() {
   const eventId = Number(id);
   const navigate = useNavigate();
   const { user, hasRole } = useAuth();
+  const { gateway } = usePaymentsConfig();
 
   const { status, data: event, error, reload } = useAsync(() => eventsApi.get(eventId), [eventId]);
 
@@ -91,6 +96,32 @@ export function EventDetailPage() {
       setPhase('error');
       if (apiError.code === 'sold_out') reload(); // refresh seats_left per the brief
     }
+  };
+
+  const onRazorpayVerified = async (orderId: number, fields: RazorpayVerifyFields) => {
+    setPhase('submitting');
+    setPurchaseError(null);
+    try {
+      const result = await ticketsApi.verifyRazorpayPayment(orderId, fields);
+      setPurchaseResult(result);
+      setPhase('success');
+      reload();
+    } catch (err) {
+      const apiError = err as ApiError;
+      setPurchaseError(apiError);
+      setPhase('error');
+      if (apiError.code === 'sold_out') reload();
+    }
+  };
+
+  const onRazorpayCancelled = (orderId: number) => {
+    void ticketsApi.cancelRazorpayPayment(orderId);
+    setPhase('cancelled');
+  };
+
+  const onRazorpayError = (err: ApiError) => {
+    setPurchaseError(err);
+    setPhase('error');
   };
 
   if (status === 'loading') return <Spinner fullPage label="Loading event…" />;
@@ -175,6 +206,15 @@ export function EventDetailPage() {
                 Close
               </button>
             </div>
+          ) : phase === 'cancelled' ? (
+            <div className={styles.successBox}>
+              <p>
+                <strong>Payment cancelled.</strong> No seat was held and nothing was charged.
+              </p>
+              <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={closeCheckout}>
+                Close
+              </button>
+            </div>
           ) : (
             <>
               <div className={styles.checkoutRow}>
@@ -198,20 +238,41 @@ export function EventDetailPage() {
                 </button>
               </div>
 
-              <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={phase === 'submitting'} />
+              {gateway === 'razorpay' ? (
+                <>
+                  {phase === 'error' && purchaseError && <ErrorBox error={razorpayErrorMessage(purchaseError)} />}
+                  <div className={styles.checkoutActions}>
+                    <RazorpayPayButton
+                      amountPaise={selectedTier.price * quantity}
+                      disabled={phase === 'submitting'}
+                      createOrder={() => ticketsApi.createRazorpayOrder(eventId, selectedTier.id, quantity, idempotencyKey!)}
+                      onVerified={onRazorpayVerified}
+                      onCancelled={onRazorpayCancelled}
+                      onError={onRazorpayError}
+                    />
+                    <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={closeCheckout} disabled={phase === 'submitting'}>
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={phase === 'submitting'} />
 
-              {phase === 'error' && purchaseError && (
-                <ErrorBox error={purchaseError} onRetry={isRetryablePaymentError(purchaseError) ? () => void confirmPurchase() : undefined} />
+                  {phase === 'error' && purchaseError && (
+                    <ErrorBox error={purchaseError} onRetry={isRetryablePaymentError(purchaseError) ? () => void confirmPurchase() : undefined} />
+                  )}
+
+                  <div className={styles.checkoutActions}>
+                    <button type="button" className={styles.button} onClick={() => void confirmPurchase()} disabled={phase === 'submitting'}>
+                      {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
+                    </button>
+                    <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={closeCheckout} disabled={phase === 'submitting'}>
+                      Cancel
+                    </button>
+                  </div>
+                </>
               )}
-
-              <div className={styles.checkoutActions}>
-                <button type="button" className={styles.button} onClick={() => void confirmPurchase()} disabled={phase === 'submitting'}>
-                  {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
-                </button>
-                <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={closeCheckout} disabled={phase === 'submitting'}>
-                  Cancel
-                </button>
-              </div>
             </>
           )}
         </Panel>

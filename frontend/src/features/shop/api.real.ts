@@ -1,5 +1,6 @@
 import { request, requestWithStatus, type Paginated } from '../../api/client';
 import type { PlaceOrderRequest, PlaceOrderResult, Product, ProductDraft, ProductSize, RestockRequest, ShopOrder, ShopOrderLine, ShopPayment } from './types';
+import type { RazorpayOrderInfo, RazorpayVerifyFields } from '../payments/types';
 
 interface WireProductSize {
   id: number;
@@ -49,6 +50,30 @@ interface WirePayment {
 interface WirePlaceOrderResult {
   order: WireOrder;
   payment: WirePayment | null;
+}
+
+interface WireRazorpayOrderInfo {
+  order_id: number;
+  razorpay_order_id: string;
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  prefill: { name: string; email: string };
+}
+
+function fromWireRazorpayOrderInfo(r: WireRazorpayOrderInfo): RazorpayOrderInfo {
+  return {
+    orderId: r.order_id,
+    razorpayOrderId: r.razorpay_order_id,
+    key: r.key,
+    amount: r.amount,
+    currency: r.currency,
+    name: r.name,
+    description: r.description,
+    prefill: r.prefill,
+  };
 }
 
 function fromWireProduct(p: WireProduct): Product {
@@ -132,5 +157,34 @@ export const realShopApi = {
       headers: { 'Idempotency-Key': idempotencyKey },
     });
     return { order: fromWireOrder(result.order), payment: result.payment ? fromWirePayment(result.payment) : null, replayed: status === 200 };
+  },
+
+  // GAP: not yet in docs/API_CONTRACT.md — see the matching comment in
+  // features/membership/api.real.ts for the shape this was built against.
+  async createRazorpayOrder(items: PlaceOrderRequest['items'], idempotencyKey: string): Promise<RazorpayOrderInfo> {
+    return fromWireRazorpayOrderInfo(
+      await request<WireRazorpayOrderInfo>('/payments/razorpay/order', {
+        method: 'POST',
+        body: { purpose: 'merch', items: items.map((i) => ({ product_size: i.productSize, ...(i.quantity !== undefined ? { quantity: i.quantity } : {}) })) },
+        headers: { 'Idempotency-Key': idempotencyKey },
+      }),
+    );
+  },
+
+  async verifyRazorpayPayment(orderId: number, fields: RazorpayVerifyFields): Promise<PlaceOrderResult> {
+    const result = await request<WirePlaceOrderResult>('/payments/razorpay/verify', {
+      method: 'POST',
+      body: {
+        order_id: orderId,
+        razorpay_order_id: fields.razorpayOrderId,
+        razorpay_payment_id: fields.razorpayPaymentId,
+        razorpay_signature: fields.razorpaySignature,
+      },
+    });
+    return { order: fromWireOrder(result.order), payment: result.payment ? fromWirePayment(result.payment) : null, replayed: false };
+  },
+
+  async cancelRazorpayPayment(orderId: number): Promise<void> {
+    await request('/payments/razorpay/cancel', { method: 'POST', body: { order_id: orderId } });
   },
 };

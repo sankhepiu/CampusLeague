@@ -1,5 +1,6 @@
 import { request, requestWithStatus, type Paginated } from '../../api/client';
 import type { PurchaseTicketsRequest, PurchaseTicketsResult, Ticket, TicketOrder, TicketPayment } from './types';
+import type { RazorpayOrderInfo, RazorpayVerifyFields } from '../payments/types';
 
 interface WireTicket {
   id: number;
@@ -34,6 +35,30 @@ interface WirePurchaseResult {
   order: WireOrder;
   payment: WirePayment | null;
   tickets: WireTicket[];
+}
+
+interface WireRazorpayOrderInfo {
+  order_id: number;
+  razorpay_order_id: string;
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  prefill: { name: string; email: string };
+}
+
+function fromWireRazorpayOrderInfo(r: WireRazorpayOrderInfo): RazorpayOrderInfo {
+  return {
+    orderId: r.order_id,
+    razorpayOrderId: r.razorpay_order_id,
+    key: r.key,
+    amount: r.amount,
+    currency: r.currency,
+    name: r.name,
+    description: r.description,
+    prefill: r.prefill,
+  };
 }
 
 function fromWireTicket(t: WireTicket): Ticket {
@@ -75,5 +100,39 @@ export const realTicketsApi = {
   async listMine(page = 1): Promise<Paginated<Ticket>> {
     const result = await request<Paginated<WireTicket>>('/tickets/me', { query: { page } });
     return { ...result, results: result.results.map(fromWireTicket) };
+  },
+
+  // GAP: not yet in docs/API_CONTRACT.md — see the matching comment in
+  // features/membership/api.real.ts for the shape this was built against.
+  async createRazorpayOrder(eventId: number, tier: number, quantity: number, idempotencyKey: string): Promise<RazorpayOrderInfo> {
+    return fromWireRazorpayOrderInfo(
+      await request<WireRazorpayOrderInfo>('/payments/razorpay/order', {
+        method: 'POST',
+        body: { purpose: 'tickets', event: eventId, tier, quantity },
+        headers: { 'Idempotency-Key': idempotencyKey },
+      }),
+    );
+  },
+
+  async verifyRazorpayPayment(orderId: number, fields: RazorpayVerifyFields): Promise<PurchaseTicketsResult> {
+    const result = await request<WirePurchaseResult>('/payments/razorpay/verify', {
+      method: 'POST',
+      body: {
+        order_id: orderId,
+        razorpay_order_id: fields.razorpayOrderId,
+        razorpay_payment_id: fields.razorpayPaymentId,
+        razorpay_signature: fields.razorpaySignature,
+      },
+    });
+    return {
+      order: fromWireOrder(result.order),
+      payment: result.payment ? fromWirePayment(result.payment) : null,
+      tickets: result.tickets.map(fromWireTicket),
+      replayed: false,
+    };
+  },
+
+  async cancelRazorpayPayment(orderId: number): Promise<void> {
+    await request('/payments/razorpay/cancel', { method: 'POST', body: { order_id: orderId } });
   },
 };

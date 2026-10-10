@@ -5,6 +5,7 @@ import { ToastProvider } from './core/providers/ToastProvider';
 import { AuthProvider } from './core/providers/AuthProvider';
 import { AchievementsProvider } from './core/providers/AchievementsProvider';
 import { CartProvider } from './core/providers/CartProvider';
+import { PaymentsConfigProvider } from './core/providers/PaymentsConfigProvider';
 import { AppRoutes } from './core/routes/AppRoutes';
 
 function App() {
@@ -15,13 +16,15 @@ function App() {
         <OptionsProvider>
           <SoundProvider>
             <ToastProvider>
-              <AuthProvider>
-                <AchievementsProvider>
-                  <CartProvider>
-                    <AppRoutes />
-                  </CartProvider>
-                </AchievementsProvider>
-              </AuthProvider>
+              <PaymentsConfigProvider>
+                <AuthProvider>
+                  <AchievementsProvider>
+                    <CartProvider>
+                      <AppRoutes />
+                    </CartProvider>
+                  </AchievementsProvider>
+                </AuthProvider>
+              </PaymentsConfigProvider>
             </ToastProvider>
           </SoundProvider>
         </OptionsProvider>

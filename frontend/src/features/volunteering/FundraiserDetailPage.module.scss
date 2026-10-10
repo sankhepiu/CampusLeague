@@ -44,6 +44,12 @@
   margin-bottom: 1rem;
 }
 
+.viewOnlyNote {
+  font-size: 0.8rem;
+  color: var(--cl-color-text-muted);
+  margin: 0 0 1rem;
+}
+
 .columns {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -56,6 +62,20 @@
   }
 }
 
+.column {
+  min-height: 3rem;
+  padding: 0.4rem;
+  border: 2px dashed transparent;
+  transition: border-color 0.12s ease-out, background 0.12s ease-out;
+}
+
+// Highlighted while a drag is hovering over this column, per the "highlight
+// the target column while dragging" requirement.
+.columnDragOver {
+  border-color: var(--cl-color-primary);
+  background: var(--cl-tint-gold);
+}
+
 .columnTitle {
   font-family: var(--cl-font-pixel);
   font-size: 0.65rem;
@@ -63,8 +83,33 @@
   color: var(--cl-color-text-muted);
 }
 
+.columnCount {
+  color: var(--cl-color-text-muted);
+  opacity: 0.8;
+}
+
 .taskCard {
   margin-bottom: 0.75rem;
+}
+
+.taskCard[draggable='true'] {
+  cursor: grab;
+}
+
+.taskCard[draggable='true']:active {
+  cursor: grabbing;
+}
+
+.taskHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.dragHandle {
+  color: var(--cl-color-text-muted);
+  line-height: 1.4;
+  user-select: none;
 }
 
 .taskTitle {
@@ -109,6 +154,53 @@
 
 .statusButtonActive {
   border-color: var(--cl-color-primary);
+  color: var(--cl-color-primary);
+}
+
+.moveMenu {
+  position: relative;
+  margin-top: 0.5rem;
+}
+
+.moveToggle {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.55rem;
+  padding: 0.4rem 0.5rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.moveList {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 7rem;
+  margin-top: 0.3rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-panel);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
+}
+
+.moveItem {
+  @include mixins.focus-ring;
+  font-size: 0.8rem;
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  background: none;
+  border: none;
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.moveItem:hover {
+  background: var(--cl-color-bg-raised);
   color: var(--cl-color-primary);
 }
 
