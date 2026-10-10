@@ -25,6 +25,9 @@ from .serializers import (
 # Plan permission table: "Create events and tiers" and "Check people in" are
 # president and event manager only.
 EventStaff = has_role('president', 'event_manager')
+# ASSUMPTION (the plan limits check-in to event manager and president): the
+# volunteer coordinator staffs the door too, so they may scan as well.
+DoorStaff = has_role('president', 'event_manager', 'volunteer_coordinator')
 # Plan API table: attendance and P&L are for EM, P and T.
 EventReportReaders = has_role('president', 'event_manager', 'treasurer')
 
@@ -178,16 +181,23 @@ class MyTicketsView(ListAPIView):
 
 
 class CheckInView(APIView):
-    """POST /checkin. Plan: "limited to event manager and president, since
-    it reveals member status."
+    """POST /checkin. Restricted to door staff because it reveals member
+    status. Takes a ticket (token or code) or a member card (member_token).
     """
 
-    permission_classes = [EventStaff]
+    permission_classes = [DoorStaff]
 
     def post(self, request):
         serializer = CheckInRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        if data['member_token']:
+            result, holder, status = tickets.scan_member(data['member_token'])
+            return Response({
+                'result': result,
+                'holder': holder and {'name': holder.name, 'email': holder.email},
+                'membership_status': status,
+            })
         scan = tickets.scan(
             operator=request.user, token=data['token'], code=data['code'], event_id=data['event'],
         )

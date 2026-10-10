@@ -60,6 +60,29 @@ class ProductListTests(ShopTestCase):
         MembershipPlan.objects.filter(pk=membership.plan_id).update(merch_discount_pct=10)
         self.assertEqual(self.client.get(PRODUCTS).json()['results'][0]['price'], 108000)
 
+    def test_image_url_is_null_without_an_image_and_relative_with_one(self):
+        self.client.credentials()
+        product = self.client.get(PRODUCTS).json()['results'][0]
+        self.assertIn('image_url', product)
+        self.assertNotIn('image', product)
+        self.assertIsNone(product['image_url'])
+
+        Product.objects.filter(pk=self.hoodie.pk).update(image='products/skyline-hoodie.png')
+
+        listed = self.client.get(PRODUCTS).json()['results'][0]
+        detail = self.client.get(f'{PRODUCTS}/{self.hoodie.id}').json()
+        self.assertEqual(listed['image_url'], '/media/products/skyline-hoodie.png')
+        self.assertEqual(detail['image_url'], '/media/products/skyline-hoodie.png')
+
+    def test_image_cannot_be_set_through_the_api(self):
+        self.login_as(self.make_role_user('treasurer'))
+        created = self.client.post(PRODUCTS, {'name': 'Cap', 'base_price': 100, 'image': 'http://evil.example/x.png',
+                                              'image_url': '/media/x.png'}, format='json')
+        self.assertEqual(created.status_code, 201, created.content)
+        self.assertIsNone(created.json()['image_url'])
+        patched = self.client.patch(f'{PRODUCTS}/{self.hoodie.id}', {'image': '../../etc/passwd'}, format='json')
+        self.assertIsNone(patched.json()['image_url'])
+
     def test_inactive_products_are_hidden_from_shoppers_but_not_staff(self):
         make_product('Old Cap', 30000, active=False)
         self.assertEqual(self.client.get(PRODUCTS).json()['count'], 1)
@@ -294,7 +317,7 @@ class ProductManagementTests(ShopTestCase):
 
     def test_invalid_products_are_refused(self):
         for body, field in [({'name': '', 'base_price': 100}, 'name'), ({'name': 'Cap', 'base_price': 0}, 'base_price'),
-                            ({'name': 'Hoodie', 'base_price': 100}, 'name'), ({'name': 'Cap', 'base_price': 100, 'image': 'not a url'}, 'image')]:
+                            ({'name': 'Hoodie', 'base_price': 100}, 'name')]:
             with self.subTest(body=body):
                 self.assert_error(self.client.post(PRODUCTS, body, format='json'), 400, 'validation_error', field=field)
 

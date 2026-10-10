@@ -158,9 +158,11 @@ class Product(TimeStampedModel):
     description = models.TextField(blank=True)
     # Paise, before any member discount.
     base_price = models.BigIntegerField()
-    # ASSUMPTION (plan says only "image"): a URL to the picture, so no
-    # image-processing dependency or upload endpoint is needed yet.
-    image = models.URLField(max_length=500, blank=True)
+    # Plan: "image". A file under media/products/. FileField, not
+    # ImageField, so no image-processing dependency is needed.
+    # ASSUMPTION: there is no upload endpoint yet; images are placed by the
+    # seed.
+    image = models.FileField(upload_to='products/', max_length=200, blank=True)
     active = models.BooleanField(default=True)
 
     class Meta:

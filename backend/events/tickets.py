@@ -2,6 +2,7 @@
 import secrets
 from dataclasses import dataclass
 
+from django.contrib.auth import get_user_model
 from django.core import signing
 from django.db import IntegrityError, transaction
 from django.db.models import F
@@ -12,6 +13,8 @@ from finance.services import post_entry
 from members.services import membership_status
 
 from .models import CheckIn, Ticket, TicketTier
+
+User = get_user_model()
 
 CASH = '1000'
 TICKET_REVENUE = '4100'
@@ -49,6 +52,41 @@ def read_token(token):
         return int(payload['t']), int(payload['e'])
     except (signing.BadSignature, KeyError, TypeError, ValueError):
         return None
+
+
+# Member cards ------------------------------------------------------------
+
+# A different salt from tickets: a ticket token can never be replayed as a
+# member token, or the other way round, even though both use the same secret.
+MEMBER_QR_SALT = 'campusleague.member-qr'
+
+
+def sign_member(user_id):
+    """Plan, "Membership card QR. Optional but useful: a signed token for the
+    member, so the door can scan a member card and show active or lapsed
+    status." Same mechanism as sign_ticket; contains only the user id.
+    """
+    return signing.dumps({'u': user_id}, salt=MEMBER_QR_SALT)
+
+
+def read_member_token(token):
+    """Return the user id, or None if the signature is wrong."""
+    try:
+        return int(signing.loads(token, salt=MEMBER_QR_SALT)['u'])
+    except (signing.BadSignature, KeyError, TypeError, ValueError):
+        return None
+
+
+def scan_member(token):
+    """Look up a member card. Reads only: no CheckIn row, no ticket change.
+    Returns (result, user or None, membership status or None).
+    """
+    user_id = read_member_token(token)
+    user = User.objects.filter(pk=user_id, is_active=True).first() if user_id is not None else None
+    if user is None:
+        return 'invalid', None, None
+    status = membership_status(user)
+    return ('member_ok' if status == 'active' else 'not_member'), user, status
 
 
 def new_code():

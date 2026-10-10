@@ -18,7 +18,9 @@ class ApiTestCase(APITestCase):
         cache.clear()
 
     def make_user(self, email='priya@example.com', **extra):
-        fields = {'password': PASSWORD, 'name': 'Priya', 'college_id': 'SSA-001'}
+        # Verified by default: most tests are about something other than
+        # email verification. Pass email_verified=False to test that.
+        fields = {'password': PASSWORD, 'name': 'Priya', 'college_id': 'SSA-001', 'email_verified': True}
         fields.update(extra)
         return User.objects.create_user(email=email, **fields)
 

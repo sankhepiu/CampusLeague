@@ -1,5 +1,8 @@
+import re
 from datetime import timedelta
 from unittest import mock
+
+from django.core import mail
 
 from django.utils import timezone
 
@@ -369,7 +372,7 @@ class MyMembershipTests(PurchaseTestCase):
     def test_user_without_membership(self):
         self.assertEqual(
             self.client.get(MY_MEMBERSHIP).json(),
-            {'status': 'none', 'membership': None, 'paid_until': None},
+            {'status': 'none', 'membership': None, 'paid_until': None, 'member_qr_token': None},
         )
 
     def test_lapsed_member(self):
@@ -377,10 +380,8 @@ class MyMembershipTests(PurchaseTestCase):
             user=self.user, plan=self.plan, status='active',
             start_date=self.today - timedelta(days=400), end_date=self.today - timedelta(days=1),
         )
-        self.assertEqual(
-            self.client.get(MY_MEMBERSHIP).json(),
-            {'status': 'lapsed', 'membership': None, 'paid_until': None},
-        )
+        body = self.client.get(MY_MEMBERSHIP).json()
+        self.assertEqual((body['status'], body['membership'], body['paid_until']), ('lapsed', None, None))
         self.assertEqual(self.client.get(ME).json()['membership_status'], 'lapsed')
 
     def test_shows_only_my_own_membership(self):
@@ -411,8 +412,14 @@ class Phase1JourneyTests(ApiTestCase):
             'name': 'Priya', 'college_id': 'SSA-041',
         }, format='json')
         self.assertEqual(signup.status_code, 201, signup.content)
-        self.assertEqual(signup.json()['user']['membership_status'], 'none')
-        self.use_token(signup.json()['token'])
+        self.assertEqual(signup.json(), {'verification_required': True, 'email': 'priya@example.com'})
+
+        # She enters the code from the email, which logs her in.
+        code = re.search(r'\b(\d{6})\b', mail.outbox[-1].body).group(1)
+        verified = self.client.post('/api/auth/verify-email', {'email': 'priya@example.com', 'code': code}, format='json')
+        self.assertEqual(verified.status_code, 200, verified.content)
+        self.assertEqual(verified.json()['user']['membership_status'], 'none')
+        self.use_token(verified.json()['token'])
 
         # She buys the Basic plan.
         purchase = self.client.post(

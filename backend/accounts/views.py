@@ -11,10 +11,12 @@ from rest_framework.views import APIView
 
 from audit import services as audit
 
+from . import verification
 from .models import RoleAssignment
 from .permissions import has_role
 from .serializers import (
-    LoginSerializer, RoleAssignmentSerializer, SignupSerializer, UserSerializer,
+    LoginSerializer, ResendCodeSerializer, RoleAssignmentSerializer, SignupSerializer, UserSerializer,
+    VerifyEmailSerializer,
 )
 
 
@@ -32,6 +34,30 @@ class InvalidCredentials(APIException):
     auth_header = 'Token'
 
 
+class EmailNotVerified(APIException):
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = 'Verify your email address before logging in. Enter the code we emailed you.'
+    default_code = 'email_not_verified'
+
+
+class InvalidCode(APIException):
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_detail = 'That code is not correct.'
+    default_code = 'invalid_code'
+
+
+class CodeExpired(APIException):
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_detail = 'That code has expired. Request a new one.'
+    default_code = 'code_expired'
+
+
+class TooManyAttempts(APIException):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    default_detail = 'Too many wrong attempts. Request a new code.'
+    default_code = 'too_many_attempts'
+
+
 def session_payload(user, token):
     return {'token': token.key, 'user': UserSerializer(user).data}
 
@@ -47,11 +73,15 @@ class SignupView(APIView):
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # User and token are created together or not at all.
+        # The account and its first code are saved together or not at all.
+        # No token: the account cannot log in until the email is verified.
         with transaction.atomic():
             user = serializer.save()
-            token = Token.objects.create(user=user)
-        return Response(session_payload(user, token), status=status.HTTP_201_CREATED)
+            code = verification.issue_code(user)
+        # Emailed only after the commit, so a code is never sent for an
+        # account that was rolled back.
+        verification.email_code(user, code)
+        return Response({'verification_required': True, 'email': user.email}, status=status.HTTP_201_CREATED)
 
 
 class LoginView(APIView):
@@ -67,8 +97,53 @@ class LoginView(APIView):
         user = authenticate(request, **serializer.validated_data)
         if user is None:
             raise InvalidCredentials()
+        # Checked only now, after the password matched. Someone who does not
+        # know the password gets invalid_credentials whether or not the
+        # account exists or is verified, so this reveals nothing to them.
+        if not user.email_verified:
+            raise EmailNotVerified()
         token, _ = Token.objects.get_or_create(user=user)
         return Response(session_payload(user, token))
+
+
+class VerifyEmailView(APIView):
+    """POST /auth/verify-email. On success, the same body as login."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'otp'
+
+    def post(self, request):
+        serializer = VerifyEmailSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        outcome, user = verification.verify(**serializer.validated_data)
+        if outcome == verification.LOCKED:
+            raise TooManyAttempts()
+        if outcome == verification.EXPIRED:
+            raise CodeExpired()
+        if outcome != verification.OK:
+            raise InvalidCode()
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response(session_payload(user, token))
+
+
+class ResendCodeView(APIView):
+    """POST /auth/resend-code. Always answers {"sent": true}: whether the
+    email belongs to an account, is already verified, or was sent a code a
+    moment ago is not revealed.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'otp'
+
+    def post(self, request):
+        serializer = ResendCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        verification.resend(serializer.validated_data['email'])
+        return Response({'sent': True})
 
 
 class LogoutView(APIView):

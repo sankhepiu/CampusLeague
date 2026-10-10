@@ -4,6 +4,8 @@ from django.db.models import F, Sum
 from django.test import TransactionTestCase, override_settings
 
 import os
+import struct
+import zlib
 from datetime import timedelta
 
 from django.conf import settings
@@ -147,7 +149,7 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         self.assertTrue(figures['on_track'])
 
         statuses = sorted(ExpenseRequest.objects.values_list('status', flat=True))
-        self.assertEqual(statuses, ['approved', 'approved', 'paid', 'paid', 'paid', 'rejected', 'submitted'])
+        self.assertEqual(statuses, ['approved', 'approved', 'paid', 'paid', 'paid', 'rejected', 'submitted', 'submitted'])
         for expense in ExpenseRequest.objects.all():
             self.assertTrue(os.path.exists(expense.receipt_file.path), expense)
             with open(expense.receipt_file.path, 'rb') as handle:
@@ -164,7 +166,7 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         before = set(os.listdir(os.path.join(settings.MEDIA_ROOT, 'receipts')))
         run('--reset')
         after = set(os.listdir(os.path.join(settings.MEDIA_ROOT, 'receipts')))
-        self.assertEqual(len(after), 7)
+        self.assertEqual(len(after), 8)
         self.assertEqual(before & after, set())
 
     def test_past_event_has_a_save_file(self):
@@ -199,24 +201,71 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
     def test_club_health_explains_itself_on_the_demo_data(self):
         result = health.club_health()
         components = {component['key']: component for component in result['components']}
-        # 36 of 40 active (90%); 0 of 4 lapsed renewed: (70*90 + 30*0) / 100 = 63.
-        self.assertEqual(components['membership']['score'], 63)
-        self.assertIn('36 of 40', components['membership']['reason'])
+        # 41 of 45 active (40 members + 5 role accounts; 91%); 0 of 4 lapsed
+        # renewed: (70*91 + 30*0) / 100 = 63.7 -> 64.
+        self.assertEqual(components['membership']['score'], 64)
+        self.assertIn('41 of 45', components['membership']['reason'])
         self.assertIn('0 of 4', components['membership']['reason'])
         # 30 of 35 checked in = 85.7 -> 86.
         self.assertEqual(components['attendance']['score'], 86)
         # 1 of 4 tasks done.
         self.assertEqual(components['volunteering']['score'], 25)
-        # Cash in: dues 2,400,000 + tickets 2,820,000 + merch 1,148,000 +
-        # bake sale 740,000 = 7,108,000 paise. Cash out: payouts of 250,000 +
-        # 80,000 + 500,000 = 830,000. 7,108,000 / 7,938,000 = 89.5 -> 90.
+        # Cash in: dues 2,650,000 (40 members + 5 role accounts) + tickets
+        # 2,820,000 + merch 1,328,000 (1,148,000 + 5 T-shirts at 36,000) +
+        # bake sale 740,000 = 7,538,000 paise. Cash out: payouts of 250,000 +
+        # 80,000 + 500,000 = 830,000. 7,538,000 / 8,368,000 = 90.1 -> 90.
         self.assertEqual(components['money']['score'], 90)
-        self.assertIn('Rs 71,080.00 came in and Rs 8,300.00 went out', components['money']['reason'])
-        # (63*30 + 86*25 + 25*20 + 90*25) / 100 = 67.9 -> 68.
+        self.assertIn('Rs 75,380.00 came in and Rs 8,300.00 went out', components['money']['reason'])
+        # (64*30 + 86*25 + 25*20 + 90*25) / 100 = 68.2 -> 68.
         self.assertEqual(result['score'], 68)
         self.assertEqual(
             round(sum(component['contribution'] for component in result['components'])), result['score'],
         )
+
+    def test_every_role_account_has_data_on_every_screen(self):
+        gala = Event.objects.get(title='Spring Gala')
+        for prefix in ['president', 'treasurer', 'events', 'volunteers', 'approver']:
+            with self.subTest(account=prefix):
+                user = User.objects.get(email=f'{prefix}@skyline.test')
+                self.assertEqual(membership_status(user), 'active')
+                self.assertEqual(Ticket.objects.filter(owner=user, event=gala, status='valid').count(), 1)
+                self.assertEqual(Order.objects.filter(buyer=user, lines__kind='merch', status='paid').count(), 1)
+                self.assertTrue(user.current_roles())
+
+        treasurer = User.objects.get(email='treasurer@skyline.test')
+        own = ExpenseRequest.objects.filter(requester=treasurer)
+        self.assertEqual([expense.status for expense in own], ['submitted'])       # exactly one, pending
+
+        coordinator = User.objects.get(email='volunteers@skyline.test')
+        self.assertGreaterEqual(
+            coordinator.task_assignments.filter(task__fundraiser__title='Bake Sale').count(), 1,
+        )
+
+    def test_products_have_generated_pixel_art_images(self):
+        images = {product.name: product.image.name for product in Product.objects.all()}
+        self.assertEqual(images, {
+            'Skyline Hoodie': 'products/skyline-hoodie.png', 'Skyline T-Shirt': 'products/skyline-t-shirt.png',
+        })
+        contents = []
+        for product in Product.objects.all():
+            with open(product.image.path, 'rb') as handle:
+                data = handle.read()
+            self.assertEqual(data[:8], b'\x89PNG\r\n\x1a\n')
+            self.assertEqual(struct.unpack('>II', data[16:24]), (256, 256))
+            # Every chunk's CRC is right, so image viewers will accept it.
+            position = 8
+            while position < len(data):
+                length = struct.unpack('>I', data[position:position + 4])[0]
+                body = data[position + 4:position + 8 + length]
+                self.assertEqual(struct.unpack('>I', data[position + 8 + length:position + 12 + length])[0], zlib.crc32(body))
+                position += 12 + length
+            contents.append(data)
+        self.assertNotEqual(contents[0], contents[1])           # two distinct pictures
+
+    def test_reseeding_keeps_the_same_image_file_names(self):
+        run('--reset')
+        self.assertEqual(sorted(os.listdir(os.path.join(settings.MEDIA_ROOT, 'products'))),
+                         ['skyline-hoodie.png', 'skyline-t-shirt.png'])
 
     def test_refuses_to_seed_twice_without_reset(self):
         before = snapshot()

@@ -8,7 +8,7 @@ from accounts.models import RoleAssignment, User
 from common.testing import ApiTestCase
 from events.models import CheckIn, Ticket
 from events.tests.helpers import make_event, make_member, make_tier
-from events.tickets import scan, sign_ticket
+from events.tickets import read_member_token, scan, sign_member, sign_ticket
 from shop.payments import purchase_tickets
 
 CHECKIN = '/api/checkin'
@@ -152,8 +152,9 @@ class CheckInTests(CheckInTestCase):
 
 class CheckInPermissionTests(CheckInTestCase):
     def test_only_president_and_event_manager_may_scan(self):
+        # The fixture's event manager is covered by every other test here.
         for role, allowed in [
-            ('president', True), ('treasurer', False), ('volunteer_coordinator', False), ('member', False),
+            ('president', True), ('volunteer_coordinator', True), ('treasurer', False), ('member', False),
         ]:
             with self.subTest(role=role):
                 self.login_as(self.make_role_user(role))
@@ -220,3 +221,126 @@ class ConcurrentScanTests(TransactionTestCase):
 
         self.assertEqual(sorted(results, key=str), ['already_checked_in'] * (scanners - 1) + ['ok'])
         self.assertEqual(CheckIn.objects.count(), 1)
+
+
+class DoorRoleTests(CheckInTestCase):
+    """Check-in is open to president, event manager and volunteer coordinator."""
+
+    def test_each_door_role_can_check_a_ticket_in(self):
+        for number, role in enumerate(['event_manager', 'president', 'volunteer_coordinator']):
+            with self.subTest(role=role):
+                ticket = purchase_tickets(
+                    user=self.holder, tier_id=self.tier.id, quantity=1,
+                    outcome='success', idempotency_key=f'door-role-key-{number}',
+                ).tickets[0]
+                operator = self.manager if role == 'event_manager' else self.make_role_user(role)
+                self.login_as(operator)
+                response = self.client.post(CHECKIN, {'token': ticket.qr_token}, format='json')
+                self.assertEqual(response.status_code, 200, response.content)
+                self.assertEqual(response.json()['result'], 'ok')
+                self.assertEqual(CheckIn.objects.get(ticket=ticket).scanned_by, operator)
+
+    def test_member_and_treasurer_get_403(self):
+        for user in [self.make_role_user('treasurer'), self.make_role_user('member'), self.holder]:
+            with self.subTest(user=user.email):
+                self.login_as(user)
+                for body in [{'token': self.ticket.qr_token}, {'member_token': 'x'}]:
+                    self.assert_error(self.client.post(CHECKIN, body, format='json'), 403, 'permission_denied')
+        self.assertEqual(CheckIn.objects.count(), 0)
+
+    def test_volunteer_coordinator_still_cannot_create_events(self):
+        self.login_as(self.make_role_user('volunteer_coordinator'))
+        response = self.client.post('/api/events', {'title': 'x'}, format='json')
+        self.assert_error(response, 403, 'permission_denied')
+
+
+class MemberCardTests(CheckInTestCase):
+    def card(self, user=None):
+        user = user or self.holder
+        self.login_as(user)
+        token = self.client.get('/api/memberships/me').json()['member_qr_token']
+        self.login_as(self.manager)
+        return token
+
+    def scan_card(self, token):
+        response = self.client.post(CHECKIN, {'member_token': token}, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def test_active_member_card(self):
+        make_member(self.holder)
+        token = self.card()
+        self.assertIsInstance(token, str)
+
+        body = self.scan_card(token)
+
+        self.assertEqual(body, {
+            'result': 'member_ok',
+            'holder': {'name': 'Priya', 'email': 'priya@example.com'},
+            'membership_status': 'active',
+        })
+
+    def test_lapsed_member_card(self):
+        make_member(self.holder, days_left=-1)
+        body = self.scan_card(self.card())
+        self.assertEqual(body, {
+            'result': 'not_member',
+            'holder': {'name': 'Priya', 'email': 'priya@example.com'},
+            'membership_status': 'lapsed',
+        })
+
+    def test_someone_who_never_joined_has_no_card(self):
+        self.assertIsNone(self.card())
+
+    def test_a_validly_signed_card_for_a_non_member_is_not_member(self):
+        body = self.scan_card(sign_member(self.holder.id))
+        self.assertEqual((body['result'], body['membership_status']), ('not_member', 'none'))
+
+    def test_tampered_card_is_invalid(self):
+        make_member(self.holder)
+        token = self.card()
+        for forged in [token[:-1] + ('A' if token[-1] != 'A' else 'B'), 'x' + token, token.split(':')[0], 'not-a-token']:
+            with self.subTest(forged=forged[:15]):
+                self.assertEqual(self.scan_card(forged), {'result': 'invalid', 'holder': None, 'membership_status': None})
+
+    def test_card_for_a_user_that_does_not_exist_is_invalid(self):
+        self.assertEqual(self.scan_card(sign_member(999999))['result'], 'invalid')
+
+    def test_ticket_token_is_not_accepted_as_a_member_card_or_the_reverse(self):
+        make_member(self.holder)
+        self.assertEqual(self.scan_card(self.ticket.qr_token)['result'], 'invalid')
+        response = self.client.post(CHECKIN, {'token': self.card()}, format='json')
+        self.assertEqual(response.json()['result'], 'invalid')
+        self.assertEqual(CheckIn.objects.count(), 0)
+
+    def test_scanning_a_card_creates_no_checkin_and_can_be_repeated(self):
+        make_member(self.holder)
+        token = self.card()
+        first, second = self.scan_card(token), self.scan_card(token)
+        self.assertEqual(first, second)
+        self.assertEqual(CheckIn.objects.count(), 0)
+        self.ticket.refresh_from_db()
+        self.assertEqual(self.ticket.status, 'valid')
+
+    def test_card_reflects_membership_at_the_moment_of_the_scan(self):
+        membership = make_member(self.holder)
+        token = self.card()
+        self.assertEqual(self.scan_card(token)['result'], 'member_ok')
+        membership.status = 'cancelled'
+        membership.save()
+        self.assertEqual(self.scan_card(token)['result'], 'not_member')
+
+    def test_missing_or_ambiguous_input_is_a_400(self):
+        make_member(self.holder)
+        token = self.card()
+        for body in [{}, {'member_token': ''}, {'member_token': token, 'token': self.ticket.qr_token},
+                     {'member_token': token, 'code': self.ticket.code}]:
+            with self.subTest(body=sorted(body)):
+                self.assert_error(self.client.post(CHECKIN, body, format='json'), 400, 'validation_error')
+
+    def test_card_is_stable_and_differs_per_user(self):
+        make_member(self.holder)
+        other = self.make_user(email='ravi@example.com', name='Ravi', college_id='SSA-R')
+        make_member(other)
+        self.assertNotEqual(self.card(), self.card(other))
+        self.assertEqual(read_member_token(self.card(other)), other.id)

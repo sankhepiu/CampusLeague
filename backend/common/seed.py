@@ -30,10 +30,12 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.db import connection, transaction
 from django.utils import timezone
 
 from accounts.models import RoleAssignment
+from common import pixel_art
 from audit.models import AuditLog
 from comms import services as comms
 from comms.models import Announcement, AnnouncementDelivery
@@ -142,7 +144,8 @@ def _placeholder_receipt(width=160, height=220):
 
 def _user(prefix, name, college_id, password_hash, **extra):
     user = User.objects.create_user(
-        email=f'{prefix}@{DOMAIN}', name=name, college_id=college_id, **extra,
+        # Demo accounts are ready to log in: no verification email to chase.
+        email=f'{prefix}@{DOMAIN}', name=name, college_id=college_id, email_verified=True, **extra,
     )
     # One hash computed once and shared: hashing 46 passwords separately
     # would make the reset take many seconds.
@@ -207,6 +210,14 @@ def seed():
             start_date=add_months(end, -plan.duration_months), end_date=end,
         )
 
+    # Every role account is a paying member too, so each one has something
+    # on every screen (membership card, tickets, orders).
+    role_accounts = list(leaders.values())
+    for number, leader in enumerate(role_accounts):
+        purchase_membership(
+            user=leader, plan=basic, outcome='success', idempotency_key=f'seed-leader-dues-{number:02}',
+        )
+
     active = [m for n, m in enumerate(members) if n not in LAPSED]
     lapsed = [m for n, m in enumerate(members) if n in LAPSED]
 
@@ -237,7 +248,8 @@ def seed():
     gala_vip = TicketTier.objects.create(
         event=gala, name='VIP Table', public_price=150000, member_price=120000, capacity=10,
     )
-    _buy_tickets(gala_general, active[:26] + lapsed[:2], 'gala-general')
+    # 21 members, 2 lapsed members and the 5 role accounts: 28 sold, 12 left.
+    _buy_tickets(gala_general, active[:21] + lapsed[:2] + role_accounts, 'gala-general')
     _buy_tickets(gala_vip, active[26:29], 'gala-vip')
 
     # A smaller upcoming event, nothing sold yet ---------------------------
@@ -250,16 +262,21 @@ def seed():
     TicketTier.objects.create(event=meetup, name='Entry', public_price=10000, member_price=5000, capacity=25)
 
     # Merchandise ----------------------------------------------------------
-    # (name, price, description, {size: (restocked, sold)})
+    # (name, price, description, picture, {size: (restocked, sold)})
     catalogue = [
-        ('Skyline Hoodie', 120000, 'Heavyweight fleece with the club crest.',
+        ('Skyline Hoodie', 120000, 'Heavyweight fleece with the club crest.', pixel_art.HOODIE_PNG,
          {'S': (10, 2), 'M': (8, 3), 'L': (8, 2), 'XL': (3, 2)}),       # XL: 1 left
-        ('Skyline T-Shirt', 40000, 'Cotton tee, club colours.',
-         {'S': (15, 0), 'M': (20, 4), 'L': (15, 2), 'XL': (10, 0)}),
+        ('Skyline T-Shirt', 40000, 'Cotton tee, club colours.', pixel_art.T_SHIRT_PNG,
+         {'S': (20, 0), 'M': (20, 4), 'L': (15, 2), 'XL': (10, 0)}),      # S: the role accounts buy 5
     ]
     shoppers = iter(active * 2)
-    for name, price, description, sizes in catalogue:
+    for name, price, description, picture, sizes in catalogue:
         product = Product.objects.create(name=name, base_price=price, description=description)
+        # A fixed file name per product. Any copy left by an earlier seed is
+        # removed first, otherwise storage would add a random suffix.
+        image_name = f"products/{name.lower().replace(' ', '-')}.png"
+        default_storage.delete(image_name)
+        product.image.save(os.path.basename(image_name), ContentFile(picture), save=True)
         for size, (restocked, sold) in sizes.items():
             row = ProductSize.objects.create(product=product, size=size)
             stock.restock(product_size=row, quantity=restocked, actor=leaders['treasurer'])
@@ -268,6 +285,12 @@ def seed():
                     user=next(shoppers), items={row.pk: 1}, outcome='success',
                     idempotency_key=f'seed-merch-{row.pk:03}-{number:02}',
                 )
+    tee_small = ProductSize.objects.get(product__name='Skyline T-Shirt', size='S')
+    for number, leader in enumerate(role_accounts):
+        purchase_merch(
+            user=leader, items={tee_small.pk: 1}, outcome='success',
+            idempotency_key=f'seed-leader-merch-{number:02}',
+        )
 
     # Announcements --------------------------------------------------------
     past_posts = [
@@ -290,7 +313,7 @@ def seed():
         ('Baking', 'done', [(members[1], 'Brownies'), (members[2], 'Cookies')]),
         ('Supplies', 'doing', [(members[3], 'Boxes and napkins')]),
         ('Table', 'todo', [(members[5], 'Saturday shift')]),
-        ('Posters', 'todo', []),                                    # nobody yet
+        ('Posters', 'todo', [(leaders['volunteers'], 'Design and print')]),
     ]:
         task = Task.objects.create(fundraiser=bake_sale, title=title, status=status, due_date=today + timedelta(days=3))
         for owner, note in owners:
@@ -324,6 +347,9 @@ def seed():
     expenses.reject(expense(members[9], 4500, 'Printer ink', 'general').pk, treasurer, 'Not agreed beforehand')
     # Left as submitted: approve it live as the treasurer.
     expense(members[4], 35000, 'Stage flowers', event=gala)
+    # The treasurer's own pending request: approving it as the treasurer is
+    # refused (self-approval); the second approver can approve it.
+    expense(treasurer, 6000, 'Accounts ledger book', 'general')
 
     # Save File: what this committee learned from the past event ----------
     savefiles.save(

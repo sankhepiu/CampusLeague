@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from accounts.models import RoleAssignment
 from accounts.permissions import has_role
+from events.tickets import sign_member
 from shop.api import IdempotencyKeyReused, PaymentFailed, idempotency_key
 from shop.models import Order
 from shop.payments import IdempotencyConflict, purchase_membership
@@ -74,11 +75,16 @@ class MyMembershipView(APIView):
     def get(self, request):
         user = request.user
         current = services.current_membership(user)
+        member_status = services.membership_status(user)
         return Response({
-            'status': services.membership_status(user),
+            'status': member_status,
             # Benefits are on membership.plan.
             'membership': MembershipSerializer(current).data if current else None,
             'paid_until': services.paid_until(user),
+            # The member card QR. Null for someone who has never been a
+            # member; a lapsed member still has a card (it scans as
+            # "not_member").
+            'member_qr_token': sign_member(user.pk) if member_status != 'none' else None,
         })
 
 

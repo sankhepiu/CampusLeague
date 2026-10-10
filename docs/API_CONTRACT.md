@@ -22,8 +22,8 @@ are proposals until both of us agree.
 
 ## Authentication
 
-Token authentication. Signup and login return a `token`; send it on every
-other request:
+Token authentication. Login and email verification return a `token`; send it
+on every other request:
 
 ```
 Authorization: Token 9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b
@@ -74,6 +74,7 @@ Codes used by every endpoint:
 | 401 | `not_authenticated` | No token was sent. |
 | 401 | `authentication_failed` | The token is unknown, logged out, or its user is inactive. |
 | 403 | `permission_denied` | Logged in, but not allowed. |
+| 403 | `email_not_verified` | Login only: the password is right but the email address has not been verified. |
 | 404 | `not_found` | The record, or the endpoint itself, does not exist. |
 | 405 | `method_not_allowed` | Wrong HTTP method. |
 | 415 | `unsupported_media_type` | The body is not JSON. |
@@ -105,11 +106,16 @@ permission regardless. Whether someone is a paid-up member comes from
 
 ## POST /auth/signup
 
-Create an account and log in. Requirement: R1.
+Create an account. Requirement: R1. **It no longer logs the user in:** the
+email address must be verified first (**Assumption:** email verification is
+beyond the backend plan).
 
 - **Who:** Public. Limited to 10 requests per minute per IP address
   (`429 throttled` beyond that).
-- **Database:** creates one user and one token, together or not at all.
+- **Database:** creates one unverified user and its first verification code,
+  together or not at all. No token.
+- **Email:** a 6-digit code is emailed to the address. If the email cannot be
+  sent, signup still succeeds; use `POST /auth/resend-code`.
 
 Request:
 
@@ -131,23 +137,14 @@ Request:
 }
 ```
 
-Response `201` (**Assumption:** signup returns a token so the new user is
-logged in immediately):
+Response `201`:
 
 ```json
-{
-  "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
-  "user": {
-    "id": 1,
-    "email": "priya@example.com",
-    "name": "Priya",
-    "college_id": "SSA-001",
-    "phone": "+919876543210",
-    "roles": [],
-    "membership_status": "none"
-  }
-}
+{ "verification_required": true, "email": "priya@example.com" }
 ```
+
+`email` is the address as stored (lowercase). Next step:
+`POST /auth/verify-email`.
 
 Errors: `400 validation_error`. Extra per-field codes:
 
@@ -158,6 +155,85 @@ Errors: `400 validation_error`. Extra per-field codes:
 
 Password-strength errors are reported only after every field passes its basic
 checks, so a first response may not list them.
+
+An email that is registered but not yet verified is also `email_taken`; that
+person should verify (or resend the code), not sign up again.
+
+## POST /auth/verify-email
+
+Confirm the emailed code and log in. **Assumption:** beyond the backend plan.
+
+- **Who:** Public. Limited to 30 requests per minute per IP address, shared
+  with `resend-code` (`429 throttled`).
+- **Database:** marks the user verified, deletes the code (single use), and
+  creates the user's token.
+
+Request:
+
+```json
+{ "email": "priya@example.com", "code": "482913" }
+```
+
+Response `200`: **exactly the body of `POST /auth/login`**:
+
+```json
+{
+  "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+  "user": {
+    "id": 47,
+    "email": "priya@example.com",
+    "name": "Priya",
+    "college_id": "SSA-041",
+    "phone": "",
+    "roles": [],
+    "membership_status": "none"
+  }
+}
+```
+
+Errors:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `invalid_code` | The code is wrong. Also returned, identically, for an unknown email, an already verified account, a code that was already used, or a code replaced by a newer one. |
+| 400 | `code_expired` | The code is more than 10 minutes old. |
+| 429 | `too_many_attempts` | The 5th wrong attempt on this code, and every attempt after it, including the right code. Request a new code. |
+| 400 | `validation_error` | `email` or `code` missing or blank. Not counted as an attempt. |
+| 429 | `throttled` | More than 30 requests a minute from this IP address. |
+
+Code rules: 6 digits; valid for 10 minutes; void after 5 wrong attempts;
+single use; a newer code voids the older one. The server stores only a keyed
+hash of the code.
+
+## POST /auth/resend-code
+
+Email a new code. **Assumption:** beyond the backend plan.
+
+- **Who:** Public. Limited to 30 requests per minute per IP address, shared
+  with `verify-email`.
+
+Request:
+
+```json
+{ "email": "priya@example.com" }
+```
+
+Response `200`, **always**:
+
+```json
+{ "sent": true }
+```
+
+The response is identical whether or not the email belongs to an account,
+the account is already verified, or a code was sent moments ago. A code is
+actually emailed only for an unverified account that has not been sent one
+in the last 60 seconds (signup's own email counts). Within those 60 seconds
+the request is accepted and nothing is sent, so the frontend should disable
+"resend" for 60 seconds after signup and after each resend.
+
+A new code voids the previous one and resets the attempt count.
+
+Errors: `400 validation_error` if `email` is missing; `429 throttled`.
 
 ## POST /auth/login
 
@@ -171,7 +247,8 @@ Request:
 { "email": "priya@example.com", "password": "correct-horse-battery" }
 ```
 
-Response `200`: same body as signup (`token` and `user`).
+Response `200`: `token` and `user` (the same body as
+`POST /auth/verify-email`).
 
 Errors:
 
@@ -179,6 +256,7 @@ Errors:
 |---|---|---|
 | 400 | `validation_error` | `email` or `password` missing or malformed. |
 | 401 | `invalid_credentials` | Wrong email, wrong password, or inactive account. The response is identical in all three cases. |
+| 403 | `email_not_verified` | The password is correct but the email has not been verified. Returned **only after the password matches**, so it reveals nothing to someone guessing. Send the user to the code screen. |
 
 ## POST /auth/logout
 
@@ -364,6 +442,7 @@ Response `200`:
 | `status` | string | `active`, `lapsed` or `none` (same as `membership_status` in the user object). |
 | `membership` | [membership object](#membership-object) or `null` | The membership covering today. |
 | `paid_until` | date or `null` | Last paid day, including a renewal that has not started yet. |
+| `member_qr_token` | string or `null` | The member card: render it as a QR code exactly as received. `null` for someone who has never been a member. A lapsed member still gets one (it scans as `not_member`). Signed by the server and contains only the user id. |
 
 ```json
 {
@@ -375,7 +454,8 @@ Response `200`:
     "start_date": "2026-10-10",
     "end_date": "2027-10-10"
   },
-  "paid_until": "2027-10-10"
+  "paid_until": "2027-10-10",
+  "member_qr_token": "eyJ1Ijo0N30:1vAbCd:Jx3..."
 }
 ```
 
@@ -567,19 +647,23 @@ Response `200`: a paginated list of ticket objects.
 
 ## POST /checkin
 
-Scan a ticket at the door. Requirements: R5, R9.
+Scan a ticket, or a member card, at the door. Requirements: R5, R9.
 
-- **Who:** President or event manager only, because the answer reveals
-  membership status.
+- **Who:** President, event manager or volunteer coordinator, because the
+  answer reveals membership status. **Assumption:** the plan lists president
+  and event manager only; the volunteer coordinator is added because they
+  staff the door. Treasurer and ordinary members get `403`.
 - **Database:** for a valid, unused ticket: one check-in row (unique per
-  ticket) and the ticket becomes `checked_in`.
+  ticket) and the ticket becomes `checked_in`. A member card scan writes
+  nothing.
 
-Request: exactly one of `token` or `code`.
+Request: exactly one of `token`, `code` or `member_token`.
 
 | Field | Type | Notes |
 |---|---|---|
 | `token` | string | The scanned QR content. |
 | `code` | string | The short code typed by hand; case, spaces and dashes are ignored. |
+| `member_token` | string | A member card's QR content (`member_qr_token` from `GET /memberships/me`). See "Member card" below. |
 | `event` | integer | Optional. **Assumption:** the event being scanned for; a ticket for any other event is `invalid`. |
 
 Response: **always `200`** with one result object (the plan's shape):
@@ -605,8 +689,30 @@ Response: **always `200`** with one result object (the plan's shape):
 Show "Active member" only when `membership_status` is `active`; `lapsed` and
 `none` are both "Not a member".
 
-Errors: `400 validation_error` (neither or both of `token` and `code`),
-`401`, `403 permission_denied`.
+### Member card
+
+With `member_token` the response is a different, smaller object, and no
+check-in is recorded (scan it as often as you like):
+
+```json
+{
+  "result": "member_ok",
+  "holder": { "name": "Priya", "email": "priya@example.com" },
+  "membership_status": "active"
+}
+```
+
+| `result` | Meaning | `holder` | `membership_status` |
+|---|---|---|---|
+| `member_ok` | Active membership today. | set | `active` |
+| `not_member` | The card is genuine but the membership is not active. | set | `lapsed` or `none` |
+| `invalid` | Forged or altered token, or the account no longer exists. | `null` | `null` |
+
+A ticket token sent as `member_token`, or a member token sent as `token`, is
+`invalid`.
+
+Errors: `400 validation_error` (none, or more than one, of `token`, `code`
+and `member_token`), `401`, `403 permission_denied`.
 
 ## GET /events/{id}/attendance
 
@@ -708,7 +814,7 @@ event, tier or product. Every endpoint that returns an order includes it:
 | `name`, `description` | string | |
 | `base_price` | integer | Paise, before member discount. |
 | `price` | integer | What **the caller** would pay per item now (their plan's `merch_discount_pct` applied if their membership is active). Display this one. |
-| `image` | string | **Assumption:** a URL; `""` if none. No upload endpoint. |
+| `image_url` | string or `null` | Path of the product picture relative to the site root, `/media/products/<file>.png`, to load through the frontend's `/media` proxy; `null` when there is none. Replaces the earlier `image` field. **Assumption:** there is no upload endpoint; the seed provides the pictures. |
 | `active` | boolean | Inactive products are returned to shop staff only. |
 | `sizes` | array | Always `S`, `M`, `L`, `XL` in that order: `{ "id", "size", "stock" }`. Use `id` when ordering. |
 
@@ -723,7 +829,7 @@ Response `200`: a paginated list of product objects.
 ```json
 {
   "id": 1, "name": "Skyline Hoodie", "description": "Heavyweight fleece with the club crest.",
-  "base_price": 120000, "price": 96000, "image": "", "active": true,
+  "base_price": 120000, "price": 96000, "image_url": "/media/products/skyline-hoodie.png", "active": true,
   "sizes": [ { "id": 1, "size": "S", "stock": 8 }, { "id": 2, "size": "M", "stock": 5 },
              { "id": 3, "size": "L", "stock": 6 }, { "id": 4, "size": "XL", "stock": 1 } ]
 }
@@ -793,7 +899,7 @@ what was bought, so no further lookups are needed:
 
 - **Who:** President, treasurer or event manager.
 - **Product fields:** `name` (unique), `base_price` (required on create);
-  `description`, `image`, `active`. PATCH accepts any subset. Stock cannot be
+  `description`, `active`. PATCH accepts any subset. The picture and stock cannot be
   set here. **Assumption:** a new product gets all four sizes at zero stock.
 - **Restock:** `{ "size": "M", "quantity": 7 }`, quantity 1 to 10000. Adds to
   stock, writes a stock movement and an audit-log row (`stock.restocked`).
@@ -1166,14 +1272,14 @@ check.)
 {
   "score": 68,
   "components": [
-    { "key": "membership", "label": "Membership", "score": 63, "weight": 30, "contribution": 18.9,
-      "reason": "36 of 40 people who joined are active members (90%); 0 of 4 whose membership ran out have renewed (0%)." },
+    { "key": "membership", "label": "Membership", "score": 64, "weight": 30, "contribution": 19.2,
+      "reason": "41 of 45 people who joined are active members (91%); 0 of 4 whose membership ran out have renewed (0%)." },
     { "key": "attendance", "label": "Event attendance", "score": 86, "weight": 25, "contribution": 21.5,
       "reason": "30 of 35 tickets were checked in across 1 closed event(s)." },
     { "key": "volunteering", "label": "Volunteering", "score": 25, "weight": 20, "contribution": 5.0,
       "reason": "1 of 4 tasks are done." },
     { "key": "money", "label": "Money", "score": 90, "weight": 25, "contribution": 22.5,
-      "reason": "In the last 30 days Rs 71,080.00 came in and Rs 8,300.00 went out; cash is now Rs 62,780.00." }
+      "reason": "In the last 30 days Rs 75,380.00 came in and Rs 8,300.00 went out; cash is now Rs 67,080.00." }
   ]
 }
 ```
@@ -1243,3 +1349,48 @@ Save file object:
   `savefile.updated` with the before and after of the changed fields).
 
 Errors: `400 validation_error`, `401`, `403 permission_denied`.
+
+---
+
+## GET /audit
+
+The audit log. Plan API table: "Audit, GET /audit, P".
+
+- **Who:** President only.
+- **Database:** read only. The log itself is append-only: no endpoint, and
+  no database user, can edit or delete a row.
+
+Newest first, 20 per page. Optional `?action=<name>` keeps only rows with
+exactly that action (for example `?action=expense.approved`).
+
+```json
+{
+  "count": 18,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 18,
+      "actor": { "id": 4, "name": "Meera Nair" },
+      "action": "savefile.created",
+      "object_type": "insights.savefile",
+      "object_id": 1,
+      "before": null,
+      "after": { "vendors": "Sound: Beatbox Audio", "checklist": ["Book venue"] },
+      "at": "2026-10-10T21:10:03.120000+05:30"
+    }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `actor` | object or `null` | `{ "id", "name" }` of who did it; `null` if not recorded. |
+| `action` | string | One of: `role.assigned`, `stock.restocked`, `expense.approved`, `expense.rejected`, `expense.paid`, `savefile.created`, `savefile.updated`. |
+| `object_type` | string | The kind of record, as `app.model`. |
+| `object_id` | integer | Its id. |
+| `before`, `after` | object or `null` | The changed values before and after. |
+| `at` | timestamp | When it happened. |
+
+Errors: `401`, `403 permission_denied`.
