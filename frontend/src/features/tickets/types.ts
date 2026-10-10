@@ -53,4 +53,7 @@ export interface PurchaseTicketsResult {
   order: TicketOrder;
   payment: TicketPayment | null;
   tickets: Ticket[];
+  /** True when the server answered 200, not 201: this Idempotency-Key had
+   * already paid, and this is that earlier result (nothing new was charged). */
+  replayed: boolean;
 }

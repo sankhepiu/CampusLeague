@@ -1,4 +1,4 @@
-import { request, type Paginated } from '../../api/client';
+import { request, requestWithStatus, type Paginated } from '../../api/client';
 import type { PurchaseTicketsRequest, PurchaseTicketsResult, Ticket, TicketOrder, TicketPayment } from './types';
 
 interface WireTicket {
@@ -59,7 +59,7 @@ function fromWirePayment(p: WirePayment): TicketPayment {
 
 export const realTicketsApi = {
   async purchase(eventId: number, { tier, quantity, testOutcome }: PurchaseTicketsRequest, idempotencyKey: string): Promise<PurchaseTicketsResult> {
-    const result = await request<WirePurchaseResult>(`/events/${eventId}/tickets`, {
+    const { status, data: result } = await requestWithStatus<WirePurchaseResult>(`/events/${eventId}/tickets`, {
       method: 'POST',
       body: { tier, ...(quantity !== undefined ? { quantity } : {}), ...(testOutcome ? { test_outcome: testOutcome } : {}) },
       headers: { 'Idempotency-Key': idempotencyKey },
@@ -68,6 +68,7 @@ export const realTicketsApi = {
       order: fromWireOrder(result.order),
       payment: result.payment ? fromWirePayment(result.payment) : null,
       tickets: result.tickets.map(fromWireTicket),
+      replayed: status === 200,
     };
   },
 

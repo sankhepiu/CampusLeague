@@ -31,3 +31,17 @@ export interface AuthResponse {
   token: string;
   user: AuthUser;
 }
+
+/** POST /auth/signup no longer logs the user in: it answers
+ * `{verification_required: true, email}` and emails a 6-digit code. The
+ * account can log in only after POST /auth/verify-email. */
+export interface SignupResult {
+  verificationRequired: true;
+  /** The address as the server stored it (lowercase). */
+  email: string;
+}
+
+export interface VerifyEmailRequest {
+  email: string;
+  code: string;
+}

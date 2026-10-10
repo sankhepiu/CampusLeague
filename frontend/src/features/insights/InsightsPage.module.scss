@@ -1,0 +1,212 @@
+@use '../../styles/mixins';
+
+.section {
+  margin-bottom: 2rem;
+}
+
+.sectionTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.readable {
+  font-family: 'Pixelify Sans', 'Courier New', monospace;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+}
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+
+.stat {
+  text-align: right;
+}
+
+.statLabel {
+  display: block;
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--cl-color-text-muted);
+  margin-bottom: 0.3rem;
+}
+
+.statValue {
+  font-size: 1.3rem;
+  color: var(--cl-color-text);
+}
+
+.positive {
+  color: var(--cl-color-success);
+}
+
+.negative {
+  color: var(--cl-color-danger);
+}
+
+.breakEvenBadge {
+  margin-top: 0.5rem;
+}
+
+.forecastTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
+.forecastTable th,
+.forecastTable td {
+  text-align: right;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 2px solid var(--cl-color-bg-raised);
+}
+
+.forecastTable th:first-child,
+.forecastTable td:first-child {
+  text-align: left;
+}
+
+.healthScore {
+  font-size: 3rem;
+  text-align: center;
+  margin: 0.5rem 0 1.5rem;
+}
+
+.componentCard {
+  margin-bottom: 1rem;
+}
+
+.componentHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+}
+
+.componentLabel {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+}
+
+.componentScore {
+  font-size: 1.1rem;
+}
+
+.componentReason {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0;
+}
+
+.componentWeight {
+  font-size: 0.75rem;
+  color: var(--cl-color-text-muted);
+}
+
+.eventPicker {
+  max-width: 22rem;
+  margin-bottom: 1rem;
+}
+
+.saveFileGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 42rem) {
+  .saveFileGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.textarea {
+  width: 100%;
+  min-height: 5rem;
+  font-family: var(--cl-font-body);
+  font-size: 1rem;
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  border: 3px solid var(--cl-color-border);
+  padding: 0.5rem 0.6rem;
+  resize: vertical;
+}
+
+.fieldLabel {
+  display: block;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  margin: 0.75rem 0 0.4rem;
+}
+
+.checklistRow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.checklistInput {
+  flex: 1;
+  font-size: 1rem;
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  border: 2px solid var(--cl-color-border);
+  padding: 0.4rem 0.6rem;
+}
+
+.removeButton {
+  @include mixins.focus-ring;
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-danger);
+  border: 2px solid var(--cl-color-border);
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+}
+
+.addButton {
+  @include mixins.focus-ring;
+  background: none;
+  border: none;
+  color: var(--cl-color-secondary);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+
+.successNote {
+  color: var(--cl-color-success);
+  margin: 0.75rem 0 0;
+}
+
+.savedFilesList {
+  margin-top: 1.5rem;
+}
+
+.savedFileRow {
+  margin-bottom: 0.75rem;
+}

@@ -13,6 +13,10 @@ export interface DataTableColumn<T> {
    * money/figure tables (finance), where right-aligned columns read faster
    * than left-aligned ones. Defaults to left. */
   align?: 'left' | 'right';
+  /** Lets this column's cells wrap instead of the table's default
+   * single-line clipping — for free-text columns like descriptions, which
+   * otherwise get cut off mid-word in a wide table. Defaults to false. */
+  wrap?: boolean;
 }
 
 interface DataTableProps<T> {
@@ -62,7 +66,12 @@ export function DataTable<T>({ columns, rows, rowKey, isLoading, error, onRetry,
         <thead>
           <tr>
             {columns.map((col, i) => (
-              <th key={col.key} scope="col" className={i === 0 ? styles.sticky : undefined} style={col.align === 'right' ? { textAlign: 'right' } : undefined}>
+              <th
+                key={col.key}
+                scope="col"
+                className={i === 0 ? styles.sticky : undefined}
+                style={{ textAlign: col.align === 'right' ? 'right' : undefined, whiteSpace: col.wrap ? 'normal' : undefined }}
+              >
                 {col.header}
               </th>
             ))}
@@ -72,7 +81,11 @@ export function DataTable<T>({ columns, rows, rowKey, isLoading, error, onRetry,
           {rows.map((row) => (
             <tr key={rowKey(row)}>
               {columns.map((col, i) => (
-                <td key={col.key} className={i === 0 ? styles.sticky : undefined} style={col.align === 'right' ? { textAlign: 'right' } : undefined}>
+                <td
+                  key={col.key}
+                  className={i === 0 ? styles.sticky : undefined}
+                  style={{ textAlign: col.align === 'right' ? 'right' : undefined, whiteSpace: col.wrap ? 'normal' : undefined, minWidth: col.wrap ? '14rem' : undefined }}
+                >
                   {col.render(row)}
                 </td>
               ))}

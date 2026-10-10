@@ -25,3 +25,16 @@ export interface CheckinRequest {
   code?: string;
   event?: number;
 }
+
+/** POST /checkin with `member_token` (a member card, not a ticket). The
+ * server records no check-in for these: it only reports membership. */
+export type MemberScanResult = 'member_ok' | 'not_member' | 'invalid';
+
+export interface MemberScanResponse {
+  result: MemberScanResult;
+  holder: { name: string; email: string } | null;
+  membershipStatus: MembershipStatus | null;
+}
+
+/** What the scanner screen shows: a ticket check-in or a member-card lookup. */
+export type ScanOutcome = ({ kind: 'ticket' } & CheckinResponse) | ({ kind: 'member' } & MemberScanResponse);

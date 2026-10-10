@@ -25,6 +25,7 @@ interface MockSale {
   amount: number;
   note: string;
   recordedAt: string;
+  recordedByName: string;
 }
 
 interface MockFundraiser {
@@ -67,8 +68,8 @@ function seed(): MockVolunteeringState {
       { id: 4, fundraiser: 2, event: null, title: 'Collect pledges', description: 'Door-to-door pledge drive in the dorms.', status: 'todo', dueDate: isoDate(2), assignees: [] },
     ],
     sales: [
-      { id: 1, fundraiserId: 1, amount: 200000, note: 'Bake sale weekend 1', recordedAt: new Date(Date.now() - 3 * 86_400_000).toISOString() },
-      { id: 2, fundraiserId: 2, amount: 50000, note: 'Pledge drive week 1', recordedAt: new Date(Date.now() - 10 * 86_400_000).toISOString() },
+      { id: 1, fundraiserId: 1, amount: 200000, note: 'Bake sale weekend 1', recordedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(), recordedByName: 'Pia President' },
+      { id: 2, fundraiserId: 2, amount: 50000, note: 'Pledge drive week 1', recordedAt: new Date(Date.now() - 10 * 86_400_000).toISOString(), recordedByName: 'Pia President' },
     ],
   };
 }
@@ -204,12 +205,12 @@ export const mockVolunteering = {
   },
 
   recordSale(fundraiserId: number, { amount, note }: SaleRequest): Fundraiser {
-    requireVolunteerAdmin();
+    const user = requireVolunteerAdmin();
     const state = loadState();
     const f = state.fundraisers.find((x) => x.id === fundraiserId);
     if (!f) throw new ApiRequestError({ code: 'not_found', message: 'No such fundraiser.' });
     if (amount <= 0) throw new ApiRequestError({ code: 'validation_error', message: 'Amount must be greater than zero.', field: 'amount' });
-    state.sales.push({ id: nextId(state.sales.map((s) => s.id)), fundraiserId, amount, note: note ?? '', recordedAt: new Date().toISOString() });
+    state.sales.push({ id: nextId(state.sales.map((s) => s.id)), fundraiserId, amount, note: note ?? '', recordedAt: new Date().toISOString(), recordedByName: user.name });
     saveState(state);
     return toPublicFundraiser(state, f);
   },
@@ -293,6 +294,7 @@ export interface MockFundraiserSale {
   amount: number;
   note: string;
   recordedAt: string;
+  recordedByName: string;
 }
 
 /** Every recorded sale across every fundraiser, with the fundraiser's title
@@ -308,5 +310,6 @@ export function listAllMockFundraiserSales(): MockFundraiserSale[] {
     amount: s.amount,
     note: s.note,
     recordedAt: s.recordedAt,
+    recordedByName: s.recordedByName,
   }));
 }

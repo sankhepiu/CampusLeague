@@ -48,7 +48,7 @@ export function ProductDetailPage() {
         productSizeId: selectedSize.id,
         productId: product.id,
         productName: product.name,
-        productImage: product.image,
+        productImage: product.imageUrl,
         sizeLabel: selectedSize.size,
         unitPriceEstimate: product.price,
       },
@@ -61,8 +61,8 @@ export function ProductDetailPage() {
     <PageShell title={product.name} background="dotted">
       <div className={styles.layout}>
         <div>
-          {product.image ? (
-            <img src={product.image} alt={product.name} className={styles.productImage} />
+          {product.imageUrl ? (
+            <img src={product.imageUrl} alt={product.name} className={styles.productImage} />
           ) : (
             <div className={styles.imagePlaceholder}>
               <PixelIcon name="chest" size={72} />

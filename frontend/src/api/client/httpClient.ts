@@ -39,7 +39,20 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   return qs ? `${url}?${qs}` : url;
 }
 
+/** 401 codes that mean "the token is missing, expired or revoked". Any other
+ * 401 (e.g. `invalid_credentials` from POST /auth/login) is an answer to the
+ * request itself, not a dead session, and must reach the caller unchanged. */
+const SESSION_ENDED_CODES = new Set(['not_authenticated', 'authentication_failed']);
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return (await requestWithStatus<T>(path, options)).data;
+}
+
+/** Same as `request`, but also returns the HTTP status. Purchase endpoints
+ * need it: the contract answers 201 for a new payment, 200 for a replay of
+ * the same Idempotency-Key and 202 for a pending one, all with the same body
+ * shape. */
+export async function requestWithStatus<T>(path: string, options: RequestOptions = {}): Promise<{ status: number; data: T }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const token = session.getToken();
@@ -64,8 +77,12 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     });
 
     if (response.status === 401) {
-      onUnauthorized?.();
-      throw new ApiRequestError(toApiError('not_authenticated', 'Your session has expired. Please log in again.'));
+      const body = await parseErrorBody(response);
+      if (SESSION_ENDED_CODES.has(body.code) || body.code.startsWith('HTTP_')) {
+        onUnauthorized?.();
+        throw new ApiRequestError(toApiError('not_authenticated', 'Your session has expired. Please log in again.'));
+      }
+      throw new ApiRequestError(body);
     }
 
     if (!response.ok) {
@@ -73,10 +90,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     }
 
     if (response.status === 204) {
-      return undefined as T;
+      return { status: response.status, data: undefined as T };
     }
 
-    return (await response.json()) as T;
+    return { status: response.status, data: (await response.json()) as T };
   } catch (err) {
     if (err instanceof ApiRequestError) throw err;
     if (err instanceof DOMException && err.name === 'AbortError') {

@@ -1,0 +1,83 @@
+@use '../../styles/mixins';
+
+.section {
+  margin-bottom: 2rem;
+}
+
+.sectionTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+.successNote {
+  color: var(--cl-color-success);
+  margin-bottom: 1rem;
+}
+
+.readable {
+  font-family: 'Pixelify Sans', 'Courier New', monospace;
+}
+
+.filterRow {
+  max-width: 18rem;
+  margin-bottom: 1rem;
+}
+
+.diff {
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diffBefore {
+  color: var(--cl-color-danger);
+}
+
+.diffAfter {
+  color: var(--cl-color-success);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.pageButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.pageButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

@@ -8,7 +8,8 @@ import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { useAsync } from '../../core/hooks/useAsync';
 import { eventsApi } from '../events/api';
 import { checkinApi } from './api';
-import type { CheckinResponse } from './types';
+import type { MemberScanResponse, ScanOutcome } from './types';
+import { formatDateTime } from '../../core/utils/formatDateTime';
 import { useQrScanner } from './useQrScanner';
 import styles from './CheckinPage.module.scss';
 
@@ -19,12 +20,12 @@ export function CheckinPage() {
   const [selectedEvent, setSelectedEvent] = useState<string>('');
 
   const [manualCode, setManualCode] = useState('');
-  const [result, setResult] = useState<CheckinResponse | null>(null);
+  const [result, setResult] = useState<ScanOutcome | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const lastScan = useRef<{ value: string; at: number } | null>(null);
-  const resultRef = useRef<CheckinResponse | null>(null);
+  const resultRef = useRef<ScanOutcome | null>(null);
   useEffect(() => {
     resultRef.current = result;
   }, [result]);
@@ -38,8 +39,20 @@ export function CheckinPage() {
       setSubmitError(null);
       try {
         const eventId = selectedEvent ? Number(selectedEvent) : undefined;
-        const response = await checkinApi.scan({ ...params, event: eventId });
-        setResult(response);
+        const ticket = await checkinApi.scan({ ...params, event: eventId });
+        // A scanned QR is either a ticket or a member card, and the two are
+        // opaque strings we can't tell apart. So: try it as a ticket first;
+        // only if the server says it is not a valid ticket, ask whether it
+        // is a member card. A member-card lookup records nothing, so the
+        // second question is harmless. (Typed codes are always tickets.)
+        if (ticket.result === 'invalid' && params.token) {
+          const member = await checkinApi.scanMember(params.token);
+          if (member.result !== 'invalid') {
+            setResult({ kind: 'member', ...member });
+            return;
+          }
+        }
+        setResult({ kind: 'ticket', ...ticket });
       } catch (err) {
         setSubmitError((err as { message?: string }).message ?? 'Could not reach the check-in service.');
       } finally {
@@ -64,8 +77,12 @@ export function CheckinPage() {
 
   const onManualSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!manualCode.trim()) return;
-    void submitScan({ code: manualCode.trim() });
+    const value = manualCode.trim();
+    if (!value) return;
+    // A typed ticket code is 8 letters and digits. Anything containing ":"
+    // is the full signed content of a QR code (a ticket or a member card)
+    // that was pasted in, so it goes down the same path as a camera scan.
+    void submitScan(value.includes(':') ? { token: value } : { code: value });
     setManualCode('');
   };
 
@@ -115,7 +132,8 @@ export function CheckinPage() {
           {submitError && <ErrorBox error={submitError} onRetry={() => setSubmitError(null)} />}
           <form onSubmit={onManualSubmit} className={styles.manualForm}>
             <TextInput
-              label="Manual code entry"
+              label="Manual entry"
+              hint="Type the 8-character ticket code, or paste the full text of a ticket or member-card QR."
               placeholder="e.g. K7MPQ2XD"
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
@@ -133,9 +151,49 @@ export function CheckinPage() {
   );
 }
 
-function ResultOverlay({ result, onScanNext }: { result: CheckinResponse; onScanNext: () => void }) {
-  const variantClass =
-    result.result === 'ok' ? styles.resultOk : result.result === 'already_checked_in' || result.result === 'cancelled' || result.result === 'invalid' ? styles.resultDanger : styles.resultDanger;
+const MEMBER_CARD_VIEW: Record<MemberScanResponse['result'], { className: string; icon: string; title: string; note: string }> = {
+  // Green: a current member.
+  member_ok: { className: styles.resultOk, icon: '✓', title: 'Active Member', note: 'Membership is active today.' },
+  // Amber: a genuine card, but the membership is not active.
+  not_member: { className: styles.resultWarn, icon: '!', title: 'Not a Current Member', note: 'This card is genuine, but the membership is not active.' },
+  // Red: forged, altered, or not a Campus League code at all.
+  invalid: { className: styles.resultDanger, icon: '✕', title: 'Invalid Card', note: 'This code is not a valid member card.' },
+};
+
+function MemberCardResult({ result, onScanNext }: { result: MemberScanResponse; onScanNext: () => void }) {
+  const view = MEMBER_CARD_VIEW[result.result];
+  return (
+    <div className={`${styles.resultOverlay} ${view.className}`} role="status" aria-live="assertive">
+      <div>
+        <p className={styles.resultKind}>Member card</p>
+        <div className={styles.resultIcon}>{view.icon}</div>
+        <h2 className={styles.resultTitle}>{view.title}</h2>
+
+        {result.holder && (
+          <>
+            <p className={styles.resultDetail}>{result.holder.name}</p>
+            <p className={styles.resultSub}>{result.holder.email}</p>
+          </>
+        )}
+        <p className={styles.resultSub}>
+          {view.note}
+          {result.membershipStatus === 'lapsed' && ' It has lapsed.'}
+          {result.membershipStatus === 'none' && ' No membership on record.'}
+        </p>
+        <p className={styles.resultSub}>No check-in was recorded: a member card is not a ticket.</p>
+
+        <button type="button" className={styles.scanNextButton} onClick={onScanNext} autoFocus>
+          Scan Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResultOverlay({ result, onScanNext }: { result: ScanOutcome; onScanNext: () => void }) {
+  if (result.kind === 'member') return <MemberCardResult result={result} onScanNext={onScanNext} />;
+
+  const variantClass = result.result === 'ok' ? styles.resultOk : styles.resultDanger;
 
   const title =
     result.result === 'ok'
@@ -144,7 +202,7 @@ function ResultOverlay({ result, onScanNext }: { result: CheckinResponse; onScan
         ? 'Already Checked In'
         : result.result === 'cancelled'
           ? 'Ticket Cancelled'
-          : 'Invalid Ticket or Wrong Event';
+          : 'Invalid Code or Wrong Event';
 
   const icon = result.result === 'ok' ? '✓' : result.result === 'already_checked_in' ? '⟳' : '✕';
   const isActiveMember = result.membershipStatus === 'active';
@@ -166,7 +224,7 @@ function ResultOverlay({ result, onScanNext }: { result: CheckinResponse; onScan
 
         {result.result === 'already_checked_in' && (
           <>
-            <p className={styles.resultSub}>Originally checked in: {result.checkedInAt ? new Date(result.checkedInAt).toLocaleString('en-IN') : '—'}</p>
+            <p className={styles.resultSub}>Originally checked in: {result.checkedInAt ? formatDateTime(result.checkedInAt) : '—'}</p>
             <p className={styles.resultSub}>By: {result.checkedInBy ?? '—'}</p>
           </>
         )}

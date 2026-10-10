@@ -29,10 +29,11 @@ export const FEATURE_ACCESS = {
   orders: null,
   volunteering: null,
   members: ['president', 'treasurer', 'event_manager'],
-  // Check-in reveals membership status to whoever is scanning, so it's
-  // deliberately narrower than most staff areas — contract is explicit:
-  // "President or event manager only."
-  checkin: ['president', 'event_manager'],
+  // Check-in reveals membership status to whoever is scanning, so it was
+  // deliberately narrow — the contract still says "President or event
+  // manager only," but the backend team has confirmed volunteer_coordinator
+  // is now allowed too (they often work the door at events).
+  checkin: ['president', 'event_manager', 'volunteer_coordinator'],
   eventAdmin: ['president', 'event_manager'],
   shopAdmin: ['president', 'treasurer', 'event_manager'],
   announcementCompose: ['president', 'event_manager', 'volunteer_coordinator'],

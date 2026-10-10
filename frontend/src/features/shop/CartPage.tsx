@@ -6,11 +6,11 @@ import { EmptyState } from '../../components/EmptyState/EmptyState';
 import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { Spinner } from '../../components/Spinner/Spinner';
 import { Money } from '../../components/Money/Money';
-import { SelectInput } from '../../components/FormField/SelectInput';
+import { ReplayNote, TestPayment } from '../../components/TestPayment/TestPayment';
+import { isRetryablePaymentError } from '../../components/TestPayment/paymentErrors';
 import type { ApiError } from '../../api/client';
 import { useAuth } from '../../core/hooks/useAuth';
 import { useCart } from '../../core/hooks/useCart';
-import { env } from '../../core/config/env';
 import { accentVarForFeature } from '../../core/config/accents';
 import { shopApi } from './api';
 import type { PaymentTestOutcome, PlaceOrderResult } from './types';
@@ -18,17 +18,13 @@ import styles from './CartPage.module.scss';
 
 type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error';
 
-const TEST_OUTCOMES: { value: PaymentTestOutcome; label: string }[] = [
-  { value: 'success', label: 'Success' },
-  { value: 'failure', label: 'Failure' },
-  { value: 'pending', label: 'Pending' },
-];
-
 export function CartPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { items, updateQuantity, removeItem, clear, estimatedSubtotal } = useCart();
 
+  // Two steps: review the cart, then the (test mode) payment screen.
+  const [atPayment, setAtPayment] = useState(false);
   const [testOutcome, setTestOutcome] = useState<PaymentTestOutcome>('success');
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [phase, setPhase] = useState<CheckoutPhase>('idle');
@@ -62,11 +58,17 @@ export function CartPage() {
   // independent press of Pay (e.g. after adjusting the cart post-sold-out).
   // Double-submission from a literal double click is prevented separately,
   // by disabling the button while phase === 'submitting'.
-  const onPay = () => {
+  const goToPayment = () => {
     if (!user) {
       navigate('/login', { state: { from: '/shop/cart' } });
       return;
     }
+    setError(null);
+    setPhase('idle');
+    setAtPayment(true);
+  };
+
+  const onPay = () => {
     const key = crypto.randomUUID();
     setIdempotencyKey(key);
     void checkout(key);
@@ -83,6 +85,7 @@ export function CartPage() {
           <p>
             <strong>Payment successful!</strong>
           </p>
+          {result.replayed && <ReplayNote />}
           <p>
             Subtotal <Money paise={result.order.subtotal} /> · Discount <Money paise={result.order.discount} /> · Total{' '}
             <Money paise={result.order.total} />
@@ -100,6 +103,52 @@ export function CartPage() {
       <PageShell title="Cart" background="dotted">
         <Panel>
           <EmptyState icon="chest" title="Your cart is empty" message="Add something from the shop first." action={<Link to="/shop">Browse Shop</Link>} />
+        </Panel>
+      </PageShell>
+    );
+  }
+
+  if (atPayment) {
+    const busy = phase === 'submitting';
+    return (
+      <PageShell title="Payment" background="dotted">
+        <Panel accent="var(--cl-gold)" className={styles.summary}>
+          <ul className={styles.payLines}>
+            {items.map((item) => (
+              <li key={item.productSizeId} className={styles.summaryRow}>
+                <span>
+                  {item.productName} · {item.sizeLabel} × {item.quantity}
+                </span>
+                <Money paise={item.unitPriceEstimate * item.quantity} />
+              </li>
+            ))}
+          </ul>
+          <div className={styles.summaryRow}>
+            <strong>Estimated total</strong>
+            <strong>
+              <Money paise={estimatedSubtotal} />
+            </strong>
+          </div>
+          <p className={styles.estimateNote}>The server works out the final price and any member discount when you pay.</p>
+
+          <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={busy} />
+
+          {phase === 'error' && error && <ErrorBox error={error} onRetry={isRetryablePaymentError(error) ? retry : undefined} />}
+          {phase === 'pending' && (
+            <p className={styles.pendingNote} role="status">
+              <strong>Payment pending.</strong> The gateway has not confirmed it, so no stock is held and nothing was charged. You can pay
+              again.
+            </p>
+          )}
+
+          <div className={styles.actions}>
+            <button type="button" className={styles.button} onClick={onPay} disabled={busy}>
+              {busy ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
+            </button>
+            <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={() => setAtPayment(false)} disabled={busy}>
+              Back to Cart
+            </button>
+          </div>
         </Panel>
       </PageShell>
     );
@@ -148,23 +197,12 @@ export function CartPage() {
         </div>
         <p className={styles.estimateNote}>Final subtotal, discount and total are decided by the server when you pay.</p>
 
-        {phase === 'error' && error && <ErrorBox error={error} onRetry={error.code === 'payment_failed' ? retry : undefined} />}
-
-        {env.useMockApi && (
-          <div className={styles.testOutcome}>
-            <SelectInput
-              label="Mock payment outcome"
-              hint="Dev-only control — picks what the mock gateway returns."
-              value={testOutcome}
-              onChange={(e) => setTestOutcome(e.target.value as PaymentTestOutcome)}
-              options={TEST_OUTCOMES}
-            />
-          </div>
-        )}
+        {/* A sold-out or unavailable item sends the buyer back here to fix the cart. */}
+        {phase === 'error' && error && !isRetryablePaymentError(error) && <ErrorBox error={error} />}
 
         <div className={styles.actions}>
-          <button type="button" className={styles.button} onClick={onPay} disabled={phase === 'submitting'}>
-            {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Pay'}
+          <button type="button" className={styles.button} onClick={goToPayment}>
+            Proceed to Payment
           </button>
           <Link to="/shop" className={`${styles.button} ${styles.buttonSecondary}`} style={{ textDecoration: 'none' }}>
             Continue Shopping
@@ -172,13 +210,6 @@ export function CartPage() {
         </div>
       </Panel>
 
-      {phase === 'pending' && (
-        <Panel accent="var(--cl-gold)">
-          <p>
-            <strong>Payment pending.</strong> No stock is held yet — we'll confirm once it clears.
-          </p>
-        </Panel>
-      )}
     </PageShell>
   );
 }

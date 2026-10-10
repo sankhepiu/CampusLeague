@@ -4,11 +4,10 @@ export type OrderStatus = 'pending' | 'paid' | 'cancelled';
 export interface OrderLine {
   id: number;
   kind: OrderKind;
-  /** GAP: the contract's order-line shape only carries bare ids (not names)
-   * for whichever of these three matches `kind` — there's no endpoint this
-   * phase asks for that would resolve a plan/tier/product_size id back to a
-   * human name from here, so the UI shows the kind + id, never a fabricated
-   * name. See OrdersPage. */
+  /** What was bought, written by the server and ready to display:
+   * "Plus membership", "Spring Gala · General", "Skyline Hoodie · M". */
+  label: string;
+  /** The id matching `kind`; the other two are null. */
   plan: number | null;
   tier: number | null;
   productSize: number | null;

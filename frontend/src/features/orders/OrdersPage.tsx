@@ -8,6 +8,7 @@ import { Money } from '../../components/Money/Money';
 import { StatusBadge, type StatusBadgeVariant } from '../../components/StatusBadge/StatusBadge';
 import { useAsync } from '../../core/hooks/useAsync';
 import { accentVarForFeature } from '../../core/config/accents';
+import { formatDateTime } from '../../core/utils/formatDateTime';
 import { ordersApi } from './api';
 import type { Order, OrderKind, OrderStatus } from './types';
 import styles from './OrdersPage.module.scss';
@@ -15,12 +16,10 @@ import styles from './OrdersPage.module.scss';
 const STATUS_VARIANT: Record<OrderStatus, StatusBadgeVariant> = { paid: 'success', pending: 'warning', cancelled: 'danger' };
 const KIND_LABEL: Record<OrderKind, string> = { membership: 'Membership', ticket: 'Ticket', merch: 'Merch' };
 
-/** A line only carries bare ids for whichever of plan/tier/product_size
- * matches its kind — the contract has no name on the line itself, so this
- * shows the kind and a reference id rather than fabricating a name. */
+/** The server writes each line's `label` ("Spring Gala · General"); this
+ * only adds the quantity when more than one was bought. */
 function lineLabel(line: Order['lines'][number]): string {
-  const ref = line.plan ?? line.tier ?? line.productSize;
-  return `${KIND_LABEL[line.kind]}${ref !== null ? ` #${ref}` : ''} × ${line.qty}`;
+  return line.qty > 1 ? `${line.label} × ${line.qty}` : line.label;
 }
 
 export function OrdersPage() {
@@ -44,7 +43,7 @@ export function OrdersPage() {
               <Panel key={order.id} accent={accentVarForFeature('orders')}>
                 <div className={styles.header}>
                   <span className={styles.orderMeta}>
-                    Order #{order.id} · {new Date(order.createdAt).toLocaleString('en-IN')}
+                    Order #{order.id} · {formatDateTime(order.createdAt)}
                   </span>
                   <StatusBadge variant={STATUS_VARIANT[order.status]}>{order.status}</StatusBadge>
                 </div>
@@ -53,7 +52,7 @@ export function OrdersPage() {
                   {order.lines.map((line) => (
                     <li key={line.id} className={styles.line}>
                       <span>
-                        <span className={styles.lineKind}>{line.kind}</span>
+                        <span className={styles.lineKind}>{KIND_LABEL[line.kind]}</span>
                         {lineLabel(line)}
                       </span>
                       <Money paise={line.qty * line.unitPrice - line.discount} />

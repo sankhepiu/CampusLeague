@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { Panel } from '../../components/Panel/Panel';
 import { TextInput } from '../../components/FormField/TextInput';
 import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
@@ -11,6 +11,7 @@ import { useAuth } from '../../core/hooks/useAuth';
 import { mockAuthApi } from './api.mock';
 import { demoAccountLabel } from './mockUsers';
 import { isValidEmail, MIN_PASSWORD_LENGTH } from './validation';
+import { RESEND_COOLDOWN_SECONDS, VerifyEmailPanel } from './VerifyEmailPanel';
 import styles from './AuthPage.module.scss';
 
 // The server reports fields by their wire (snake_case) name; our form state
@@ -34,6 +35,42 @@ interface SignupForm {
   confirmPassword: string;
 }
 
+/** An account that still has to confirm its emailed code. Kept in
+ * sessionStorage so a page refresh returns to the code screen instead of
+ * losing the visitor's place (it never holds the code or the password). */
+interface PendingVerification {
+  email: string;
+  /** When a code was last sent, for the resend cooldown; null if unknown
+   * (arrived from a blocked login, so resend is available straight away). */
+  sentAt: number | null;
+  notice?: string;
+}
+
+const PENDING_KEY = 'campusleague.auth.pendingVerification';
+
+function loadPendingVerification(): PendingVerification | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_KEY);
+    return raw ? (JSON.parse(raw) as PendingVerification) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storePendingVerification(pending: PendingVerification | null): void {
+  try {
+    if (pending) sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    else sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    /* storage unavailable: the screen still works, it just won't survive a refresh */
+  }
+}
+
+function remainingCooldown(sentAt: number | null): number {
+  if (sentAt === null) return 0;
+  return Math.max(0, RESEND_COOLDOWN_SECONDS - Math.floor((Date.now() - sentAt) / 1000));
+}
+
 const EMPTY_LOGIN: LoginForm = { email: '', password: '' };
 const EMPTY_SIGNUP: SignupForm = { name: '', email: '', collegeId: '', password: '', confirmPassword: '' };
 
@@ -45,7 +82,6 @@ interface AuthPageProps {
  * chosen here — they only ever come back from the server on login/signup/me. */
 export function AuthPage({ initialTab }: AuthPageProps) {
   const { status, login, signup } = useAuth();
-  const location = useLocation();
 
   const [tab, setTab] = useState<Tab>(initialTab);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -58,10 +94,23 @@ export function AuthPage({ initialTab }: AuthPageProps) {
 
   const [loginForm, setLoginForm] = useState<LoginForm>(EMPTY_LOGIN);
   const [signupForm, setSignupForm] = useState<SignupForm>(EMPTY_SIGNUP);
+  const [pendingVerification, setPendingVerificationState] = useState<PendingVerification | null>(loadPendingVerification);
 
+  const setPendingVerification = (pending: PendingVerification | null) => {
+    storePendingVerification(pending);
+    setPendingVerificationState(pending);
+  };
+
+  // Verified and signed in (or signed in some other way): the pending
+  // marker has done its job.
+  if (status === 'authenticated' && pendingVerification) {
+    storePendingVerification(null);
+  }
+
+  // Always /home, never back to wherever ProtectedRoute bounced them from —
+  // the demo wants a single, predictable landing spot every time.
   if (status === 'authenticated' && redirectReady) {
-    const from = (location.state as { from?: string } | null)?.from ?? '/home';
-    return <Navigate to={from} replace />;
+    return <Navigate to="/home" replace />;
   }
 
   const switchTab = (next: Tab) => {
@@ -94,7 +143,9 @@ export function AuthPage({ initialTab }: AuthPageProps) {
     return errors;
   };
 
-  const runSubmit = async (validate: () => Record<string, string>, action: () => Promise<void>) => {
+  /** `action` resolves to an email address when that account must verify
+   * its email before it can sign in (signup always; never login). */
+  const runSubmit = async (validate: () => Record<string, string>, action: () => Promise<string | void>) => {
     const errors = validate();
     setFieldErrors(errors);
     setGeneralError(null);
@@ -103,13 +154,30 @@ export function AuthPage({ initialTab }: AuthPageProps) {
     setPhase('submitting');
     setRedirectReady(false);
     try {
-      await action();
+      const emailToVerify = await action();
+      if (emailToVerify) {
+        // Account created, code emailed, not signed in yet: go to step two.
+        setPhase('idle');
+        setRedirectReady(true);
+        setPendingVerification({ email: emailToVerify, sentAt: Date.now() });
+        return;
+      }
       setPhase('success');
       setTimeout(() => setRedirectReady(true), 500);
     } catch (err) {
       setPhase('idle');
       setRedirectReady(true);
       const apiError = err as ApiError;
+      if (apiError?.code === 'email_not_verified') {
+        // The password was right (the server only says this after it
+        // matches) but the email is unconfirmed: send them to the code screen.
+        setPendingVerification({
+          email: loginForm.email.trim().toLowerCase(),
+          sentAt: null,
+          notice: 'Your email is not verified yet. Enter the code we emailed you, or resend a new one.',
+        });
+        return;
+      }
       if (apiError?.errors && apiError.errors.length > 0) {
         const perField: Record<string, string> = {};
         for (const fieldError of apiError.errors) {
@@ -131,14 +199,15 @@ export function AuthPage({ initialTab }: AuthPageProps) {
 
   const onSignupSubmit = (e: FormEvent) => {
     e.preventDefault();
-    void runSubmit(validateSignup, () =>
-      signup({
+    void runSubmit(validateSignup, async () => {
+      const result = await signup({
         name: signupForm.name.trim(),
         email: signupForm.email.trim(),
         collegeId: signupForm.collegeId.trim(),
         password: signupForm.password,
-      }),
-    );
+      });
+      return result.email;
+    });
   };
 
   const submitting = phase === 'submitting';
@@ -156,6 +225,22 @@ export function AuthPage({ initialTab }: AuthPageProps) {
           <h1 className={styles.title}>Campus League</h1>
         </div>
 
+        {pendingVerification ? (
+          <VerifyEmailPanel
+            // A different address means a fresh panel (fresh code box and cooldown).
+            key={pendingVerification.email}
+            email={pendingVerification.email}
+            initialCooldown={remainingCooldown(pendingVerification.sentAt)}
+            notice={pendingVerification.notice}
+            onCodeSent={() => setPendingVerification({ email: pendingVerification.email, sentAt: Date.now() })}
+            onBack={() => {
+              setPendingVerification(null);
+              setLoginForm({ email: pendingVerification.email, password: '' });
+              switchTab('login');
+            }}
+          />
+        ) : (
+          <>
         <div className={styles.tabs} role="tablist" aria-label="Authentication mode">
           <button
             type="button"
@@ -277,6 +362,8 @@ export function AuthPage({ initialTab }: AuthPageProps) {
               ))}
             </div>
           </div>
+        )}
+          </>
         )}
       </Panel>
     </div>

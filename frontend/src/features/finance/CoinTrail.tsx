@@ -7,6 +7,7 @@ import { useAsync } from '../../core/hooks/useAsync';
 import { financeApi } from './api';
 import type { TraceEntry, TraceSource } from './types';
 import styles from './CoinTrail.module.scss';
+import { formatDateTime } from '../../core/utils/formatDateTime';
 
 interface CoinTrailProps {
   /** The figure to trace, or null when the panel should be closed. */
@@ -109,7 +110,7 @@ function FigureView({
           <button key={entry.id} type="button" className={styles.entryRow} onClick={() => onSelect(entry)}>
             <span className={styles.entryMeta}>
               <span className={styles.entryDescription}>{entry.description}</span>
-              <span className={styles.entryDate}>{new Date(entry.postedAt).toLocaleString('en-IN')}</span>
+              <span className={styles.entryDate}>{formatDateTime(entry.postedAt)}</span>
             </span>
             <span className={`${styles.entryAmount} ${entry.amount >= 0 ? styles.positive : styles.negative}`}>
               <Money paise={entry.amount} />
@@ -125,7 +126,7 @@ function EntryView({ entry }: { entry: TraceEntry }) {
   return (
     <>
       <h2 className={styles.figureTitle}>{entry.description}</h2>
-      <p className={styles.entryDate}>{new Date(entry.postedAt).toLocaleString('en-IN')}</p>
+      <p className={styles.entryDate}>{formatDateTime(entry.postedAt)}</p>
 
       <table className={styles.linesTable}>
         <thead>
@@ -137,7 +138,7 @@ function EntryView({ entry }: { entry: TraceEntry }) {
         </thead>
         <tbody>
           {entry.lines.map((line) => (
-            <tr key={line.id}>
+            <tr key={line.id} className={line.counted === false ? styles.lineUncounted : undefined}>
               <td>
                 {line.account.code} {line.account.name}
               </td>
@@ -177,7 +178,7 @@ function SourceView({ source }: { source: TraceSource }) {
                   <Money paise={t.pricePaid} />
                 </td>
                 <td>{t.status}</td>
-                <td>{t.checkedInAt ? new Date(t.checkedInAt).toLocaleString('en-IN') : '—'}</td>
+                <td>{t.checkedInAt ? formatDateTime(t.checkedInAt) : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -192,6 +193,7 @@ function SourceView({ source }: { source: TraceSource }) {
               <th>Size</th>
               <th>Qty</th>
               <th>Unit Price</th>
+              <th>Paid</th>
             </tr>
           </thead>
           <tbody>
@@ -202,6 +204,9 @@ function SourceView({ source }: { source: TraceSource }) {
                 <td>{item.qty}</td>
                 <td>
                   <Money paise={item.unitPrice} />
+                </td>
+                <td>
+                  <Money paise={item.paid} />
                 </td>
               </tr>
             ))}
@@ -230,7 +235,7 @@ function SourceView({ source }: { source: TraceSource }) {
           </div>
           <div className={styles.kv}>
             <span>Description</span>
-            <span>{source.details.description ?? '—'}</span>
+            <span>{source.details.description}</span>
           </div>
           <div className={styles.kv}>
             <span>Approved By</span>
@@ -248,14 +253,16 @@ function SourceView({ source }: { source: TraceSource }) {
         <>
           <div className={styles.kv}>
             <span>Fundraiser</span>
-            <span>{source.details.fundraiser}</span>
+            <span>#{source.details.fundraiser}</span>
           </div>
-          {source.details.note && (
-            <div className={styles.kv}>
-              <span>Note</span>
-              <span>{source.details.note}</span>
-            </div>
-          )}
+          <div className={styles.kv}>
+            <span>Amount</span>
+            <Money paise={source.details.amount} />
+          </div>
+          <div className={styles.kv}>
+            <span>Recorded By</span>
+            <span>{source.details.recordedBy}</span>
+          </div>
         </>
       )}
     </div>

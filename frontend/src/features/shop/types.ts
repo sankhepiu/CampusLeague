@@ -12,7 +12,10 @@ export interface Product {
   description: string;
   basePrice: number; // paise, before member discount
   price: number; // paise — what the caller pays now (server-decided)
-  image: string; // "" if none
+  /** Path relative to the site root (`/media/products/<file>.png`), loaded
+   * through the dev server's /media proxy; `null` when there is no picture.
+   * Set by the server only: there is no upload endpoint. */
+  imageUrl: string | null;
   active: boolean;
   sizes: ProductSize[]; // always S, M, L, XL in that order
 }
@@ -21,7 +24,6 @@ export interface ProductDraft {
   name: string;
   basePrice: number;
   description?: string;
-  image?: string;
   active?: boolean;
 }
 
@@ -73,4 +75,7 @@ export interface ShopPayment {
 export interface PlaceOrderResult {
   order: ShopOrder;
   payment: ShopPayment | null;
+  /** True when the server answered 200, not 201: this Idempotency-Key had
+   * already paid, and this is that earlier result (nothing new was charged). */
+  replayed: boolean;
 }

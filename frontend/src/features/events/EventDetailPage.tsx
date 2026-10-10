@@ -6,14 +6,14 @@ import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { Spinner } from '../../components/Spinner/Spinner';
 import { Money } from '../../components/Money/Money';
 import { StatusBadge } from '../../components/StatusBadge/StatusBadge';
-import { SelectInput } from '../../components/FormField/SelectInput';
+import { ReplayNote, TestPayment } from '../../components/TestPayment/TestPayment';
+import { isRetryablePaymentError } from '../../components/TestPayment/paymentErrors';
 import { PnlCard } from '../../components/PnlCard/PnlCard';
 import type { ApiError } from '../../api/client';
 import { useAsync } from '../../core/hooks/useAsync';
 import { useAuth } from '../../core/hooks/useAuth';
 import { accentVarForFeature } from '../../core/config/accents';
 import { formatDateTime } from '../../core/utils/formatDateTime';
-import { env } from '../../core/config/env';
 import { eventsApi } from './api';
 import { ticketsApi } from '../tickets/api';
 import type { PaymentTestOutcome, PurchaseTicketsResult } from '../tickets/types';
@@ -21,12 +21,6 @@ import type { Tier } from './types';
 import styles from './EventDetailPage.module.scss';
 
 type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error';
-
-const TEST_OUTCOMES: { value: PaymentTestOutcome; label: string }[] = [
-  { value: 'success', label: 'Success' },
-  { value: 'failure', label: 'Failure' },
-  { value: 'pending', label: 'Pending' },
-];
 
 function tierAvailability(tier: Tier): { available: boolean; reason?: string } {
   const now = Date.now();
@@ -160,6 +154,7 @@ export function EventDetailPage() {
                 <strong>Payment successful!</strong> You bought {purchaseResult.tickets.length} ticket
                 {purchaseResult.tickets.length === 1 ? '' : 's'} for {selectedTier.name}.
               </p>
+              {purchaseResult.replayed && <ReplayNote />}
               <ul className={styles.ticketList}>
                 {purchaseResult.tickets.map((t) => (
                   <li key={t.id} className={styles.ticketRow}>
@@ -203,23 +198,15 @@ export function EventDetailPage() {
                 </button>
               </div>
 
-              {phase === 'error' && purchaseError && <ErrorBox error={purchaseError} onRetry={confirmPurchase} />}
+              <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={phase === 'submitting'} />
 
-              {env.useMockApi && (
-                <div className={styles.testOutcome}>
-                  <SelectInput
-                    label="Mock payment outcome"
-                    hint="Dev-only control — picks what the mock gateway returns."
-                    value={testOutcome}
-                    onChange={(e) => setTestOutcome(e.target.value as PaymentTestOutcome)}
-                    options={TEST_OUTCOMES}
-                  />
-                </div>
+              {phase === 'error' && purchaseError && (
+                <ErrorBox error={purchaseError} onRetry={isRetryablePaymentError(purchaseError) ? () => void confirmPurchase() : undefined} />
               )}
 
               <div className={styles.checkoutActions}>
                 <button type="button" className={styles.button} onClick={() => void confirmPurchase()} disabled={phase === 'submitting'}>
-                  {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Pay'}
+                  {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
                 </button>
                 <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={closeCheckout} disabled={phase === 'submitting'}>
                   Cancel

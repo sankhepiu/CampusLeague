@@ -15,12 +15,6 @@ export interface MembershipRecord {
   status: MembershipRecordStatus;
   startDate: string; // YYYY-MM-DD
   endDate: string;
-  /** GAP: docs/API_CONTRACT.md has no check-in/QR token field anywhere yet
-   * (R5 asks for a QR "rendered from the token the API returns," but no such
-   * token exists in the Membership object today). Undefined against the real
-   * API until the contract defines it; the mock fills it in so the card UI
-   * can be built and reviewed now. Never interpreted client-side either way. */
-  qrToken?: string;
 }
 
 export interface OrderLine {
@@ -66,10 +60,17 @@ export interface PurchaseResult {
   order: Order;
   payment: Payment | null;
   membership: MembershipRecord | null;
+  /** True when the server answered 200, not 201: this Idempotency-Key had
+   * already paid, and this is that earlier result (nothing new was charged). */
+  replayed: boolean;
 }
 
 export interface MyMembership {
   status: 'active' | 'lapsed' | 'none';
   membership: MembershipRecord | null;
   paidUntil: string | null;
+  /** The member card: an opaque, server-signed string to render as a QR code
+   * exactly as received. `null` for someone who has never been a member. A
+   * lapsed member still has one (it scans as "not a member"). */
+  memberQrToken: string | null;
 }

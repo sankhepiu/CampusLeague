@@ -1,13 +1,10 @@
 import type { LedgerAccount } from './types';
 
-/** Account codes confirmed by the contract: 1000 (Cash), 2000 (Reimbursements
- * payable), 4000/4100/4200 (the three named revenue accounts), 5000 (Event
- * expenses). The contract says there are "four revenue accounts" and three
- * expense accounts (one per expense category, "5000, 5100, 5200") but only
- * names 5000 — 4300, 5100 and 5200's codes and names are an **assumption**,
- * following the same numbering pattern. Shared (not mock-only) since both
- * the mock ledger engine and the Ledger page's account filter need the same
- * list, and this has to work the same way against the real API too. */
+/** All nine account codes, confirmed against the real backend (4300 is now
+ * also named directly in the contract; 5100/5200 were confirmed by the
+ * backend team). Shared (not mock-only) since both the mock ledger engine
+ * and the Ledger page's account filter need the same list, and this has to
+ * work the same way against the real API too. */
 export const ACCOUNTS: Record<string, LedgerAccount> = {
   '1000': { code: '1000', name: 'Cash', type: 'asset' },
   '2000': { code: '2000', name: 'Reimbursements payable', type: 'liability' },

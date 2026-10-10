@@ -122,7 +122,7 @@ export const mockShopApi = {
       if (replay.userEmail !== user.email || replay.basketKey !== basketKey) {
         throw new ApiRequestError({ code: 'idempotency_key_reused', message: 'This idempotency key already paid for a different basket.' });
       }
-      return replay.result;
+      return { ...replay.result, replayed: true };
     }
 
     // Resolve + validate every line before touching stock, so one bad size
@@ -160,7 +160,7 @@ export const mockShopApi = {
       }));
       const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.qty, 0);
       const order: ShopOrder = { id: orderId, status: 'pending', subtotal, discount: 0, total: subtotal, paymentRef: '', createdAt, lines };
-      return { order, payment: null };
+      return { order, payment: null, replayed: false };
     }
 
     // Success — reserve stock for every line.
@@ -181,12 +181,15 @@ export const mockShopApi = {
     const gatewayRef = mockGatewayRef();
     const order: ShopOrder = { id: orderId, status: 'paid', subtotal, discount, total, paymentRef: gatewayRef, createdAt, lines };
     const payment: ShopPayment = { id: orderId + lines.length, amount: total, status: 'succeeded', gatewayRef, createdAt };
-    const result: PlaceOrderResult = { order, payment };
+    const result: PlaceOrderResult = { order, payment, replayed: false };
 
     idempotency[idempotencyKey] = { userEmail: user.email, basketKey, result };
     saveIdempotency(idempotency);
 
-    addMockOrder(user.email, { ...order, lines: order.lines.map((l) => ({ ...l, plan: null, tier: null })) });
+    addMockOrder(user.email, {
+      ...order,
+      lines: order.lines.map((l, i) => ({ ...l, label: `${resolved[i].product.name} · ${resolved[i].size.size}`, plan: null, tier: null })),
+    });
 
     return result;
   },

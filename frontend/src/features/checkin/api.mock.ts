@@ -1,7 +1,8 @@
 import { ApiRequestError } from '../../api/client';
-import { findUserByEmail, getCurrentMockUser } from '../auth/mockUsers';
+import { findUserByEmail, findUserById, getCurrentMockUser } from '../auth/mockUsers';
+import { MOCK_MEMBER_TOKEN_PREFIX } from '../membership/api.mock';
 import { findMockTicketByCodeOrToken, saveMockTicket } from '../tickets/mockTicketsStore';
-import type { CheckinRequest, CheckinResponse } from './types';
+import type { CheckinRequest, CheckinResponse, MemberScanResponse } from './types';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -72,6 +73,20 @@ export const mockCheckinApi = {
       membershipStatus: membershipStatusNow,
       checkedInAt,
       checkedInBy,
+    };
+  },
+
+  async scanMember(memberToken: string): Promise<MemberScanResponse> {
+    await delay(300);
+    const invalid: MemberScanResponse = { result: 'invalid', holder: null, membershipStatus: null };
+    if (!memberToken.startsWith(MOCK_MEMBER_TOKEN_PREFIX)) return invalid;
+    const id = Number(memberToken.slice(MOCK_MEMBER_TOKEN_PREFIX.length));
+    const member = Number.isInteger(id) ? findUserById(id) : undefined;
+    if (!member) return invalid;
+    return {
+      result: member.membershipStatus === 'active' ? 'member_ok' : 'not_member',
+      holder: { name: member.name, email: member.email },
+      membershipStatus: member.membershipStatus,
     };
   },
 };

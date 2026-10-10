@@ -9,10 +9,27 @@ interface MockProduct {
   name: string;
   description: string;
   basePrice: number;
-  image: string;
+  imageUrl: string | null;
   active: boolean;
   sizes: MockProductSize[];
 }
+
+/** Stand-ins for the backend's /media/products/*.png in mock mode, where
+ * there is no server to fetch from: tiny inline SVGs drawn on a 16x16 grid
+ * in the same colours as the seed's pixel art. */
+function pixelSvg(body: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#212529"/>${body}</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+const MOCK_PRODUCT_IMAGES: Record<string, string> = {
+  'Skyline Hoodie': pixelSvg(
+    '<path fill="#3062c9" d="M4 2h8v2h3v5h-2v5H3V9H1V4h3z"/><path fill="#78a4f0" d="M5 2h6v1H5zM7 6h2v3H7z"/><path fill="#1e3e8c" d="M6 3h4v2H6zM6 11h4v2H6z"/>',
+  ),
+  'Campus Tee': pixelSvg(
+    '<path fill="#e25c36" d="M3 3h3v1h4V3h3l3 3-2 2-2-1v7H5V7L3 8 1 6z"/><path fill="#ffcd56" d="M7 8h2v2H7z"/><path fill="#a0381e" d="M5 13h6v1H5z"/>',
+  ),
+};
 
 const STORE_KEY = 'campusleague.mock.products';
 const SIZE_ORDER: SizeLabel[] = ['S', 'M', 'L', 'XL'];
@@ -24,7 +41,7 @@ function seed(): MockProduct[] {
       name: 'Skyline Hoodie',
       description: 'Heavyweight fleece with the club crest.',
       basePrice: 120000,
-      image: '',
+      imageUrl: MOCK_PRODUCT_IMAGES['Skyline Hoodie'],
       active: true,
       sizes: [
         { id: 1, size: 'S', stock: 8 },
@@ -38,7 +55,7 @@ function seed(): MockProduct[] {
       name: 'Campus Tee',
       description: 'Lightweight cotton tee, screen-printed logo.',
       basePrice: 40000,
-      image: '',
+      imageUrl: MOCK_PRODUCT_IMAGES['Campus Tee'],
       active: true,
       sizes: [
         { id: 5, size: 'S', stock: 0 },
@@ -52,7 +69,7 @@ function seed(): MockProduct[] {
       name: 'Archived Cap',
       description: 'Last year’s design — no longer for sale.',
       basePrice: 25000,
-      image: '',
+      imageUrl: null,
       active: false,
       sizes: [
         { id: 9, size: 'S', stock: 0 },
@@ -97,7 +114,8 @@ export function toPublicProduct(p: MockProduct): Product {
     description: p.description,
     basePrice: p.basePrice,
     price: priceForCurrentUser(p.basePrice),
-    image: p.image,
+    // `??` also covers a store saved before imageUrl existed.
+    imageUrl: p.imageUrl ?? MOCK_PRODUCT_IMAGES[p.name] ?? null,
     active: p.active,
     sizes: p.sizes,
   };
@@ -139,7 +157,8 @@ export function createMockProduct(draft: ProductDraft): MockProduct {
     name: draft.name,
     description: draft.description ?? '',
     basePrice: draft.basePrice,
-    image: draft.image ?? '',
+    // No upload endpoint in the contract: new products have no picture.
+    imageUrl: null,
     active: draft.active ?? true,
     // New products start with all four sizes at zero stock (contract Assumption).
     sizes: SIZE_ORDER.map((size, i) => ({ id: sizeId0 + i, size, stock: 0 })),
@@ -169,7 +188,6 @@ export function updateMockProduct(id: number, patch: Partial<ProductDraft>): Moc
     name: patch.name ?? product.name,
     basePrice: patch.basePrice ?? product.basePrice,
     description: patch.description ?? product.description,
-    image: patch.image ?? product.image,
     active: patch.active ?? product.active,
   });
   saveStore(products);

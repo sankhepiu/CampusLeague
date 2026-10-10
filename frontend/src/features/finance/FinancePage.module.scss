@@ -29,6 +29,10 @@
 
 .statButton {
   @include mixins.focus-ring;
+  // Buttons don't inherit color from their parent like other elements do —
+  // without this, Cash/Payable (which get no .positive/.negative) rendered
+  // in the browser's default dark button text, unreadable on a dark panel.
+  color: var(--cl-color-text);
   background: none;
   border: none;
   padding: 0;

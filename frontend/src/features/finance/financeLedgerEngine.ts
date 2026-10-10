@@ -131,6 +131,8 @@ function buildOrderEntries(): InternalEntry[] {
           size: resolved?.size.size ?? '?',
           qty: l.qty,
           unitPrice: l.unitPrice,
+          discount: l.discount,
+          paid: l.qty * l.unitPrice - l.discount,
         };
       });
       const id = 2_500_000 + order.id;
@@ -175,7 +177,7 @@ function buildFundraiserSaleEntries(): InternalEntry[] {
       type: 'fundraiser_sale' as const,
       id: sale.id,
       label: `${sale.fundraiserTitle} sale recorded`,
-      details: { fundraiser: sale.fundraiserTitle, note: sale.note },
+      details: { fundraiser: sale.fundraiserId, amount: sale.amount, recordedBy: sale.recordedByName },
     },
   }));
 }
@@ -247,12 +249,15 @@ function accountSignedAmount(code: string, line: InternalLine): number {
   return line.debit - line.credit;
 }
 
-function toPublicLines(lines: InternalLine[]): LedgerLine[] {
+function toPublicLines(lines: InternalLine[], countedAccounts?: string[]): LedgerLine[] {
   return lines.map((l, i) => ({
     id: i + 1,
     account: ACCOUNTS[l.account] ?? { code: l.account, name: l.account, type: 'asset' },
     debit: l.debit,
     credit: l.credit,
+    // Only set for a trace entry's lines (GET /finance/ledger's plain lines
+    // don't have this) — true for the line(s) on the figure's own account(s).
+    counted: countedAccounts ? countedAccounts.includes(l.account) : undefined,
   }));
 }
 
@@ -302,6 +307,23 @@ export function computeSummary(): FinanceSummary {
   const payable = wentOutTotal - paidOut;
 
   return { cameIn: { total: cameInTotal, byAccount: cameInByAccount }, wentOut: { total: wentOutTotal, byAccount: wentOutByAccount }, net, cash, payable };
+}
+
+/** Cash (account 1000) that moved in the last 30 days — split into what came
+ * in vs. went out. Feeds the Club Health "Money" component, which scores
+ * the *share* coming in, not the absolute amounts. */
+export function computeCashMovementLast30Days(): { inAmount: number; outAmount: number } {
+  const cutoff = Date.now() - 30 * 86_400_000;
+  const entries = buildAllEntries().filter((e) => new Date(e.postedAt).getTime() >= cutoff);
+  let inAmount = 0;
+  let outAmount = 0;
+  for (const e of entries) {
+    const cashLine = e.lines.find((l) => l.account === '1000');
+    if (!cashLine) continue;
+    inAmount += cashLine.debit;
+    outAmount += cashLine.credit;
+  }
+  return { inAmount, outAmount };
 }
 
 /** Real expenses posted against this event — plugged into GET /events/{id}/pnl
@@ -380,7 +402,7 @@ function unknownFigure(): never {
   });
 }
 
-function entriesToTrace(figure: string, label: string, chosen: { entry: InternalEntry; amount: number }[]): Trace {
+function entriesToTrace(figure: string, label: string, chosen: { entry: InternalEntry; amount: number }[], countedAccounts: string[]): Trace {
   chosen.sort((a, b) => b.entry.postedAt.localeCompare(a.entry.postedAt) || b.entry.id - a.entry.id);
   const entryCount = chosen.length;
   const capped = chosen.slice(0, 200);
@@ -390,12 +412,15 @@ function entriesToTrace(figure: string, label: string, chosen: { entry: Internal
     description: entry.description,
     kind: entry.kind,
     amount,
-    lines: toPublicLines(entry.lines),
+    lines: toPublicLines(entry.lines, countedAccounts),
     source: entry.source,
   }));
   const total = chosen.reduce((s, c) => s + c.amount, 0);
   return { figure, label, total, entryCount, entries };
 }
+
+const REVENUE_ACCOUNTS = ['4000', '4100', '4200', '4300'];
+const EXPENSE_ACCOUNTS = ['5000', '5100', '5200'];
 
 export function trace(figure: string): Trace {
   const entries = buildAllEntries();
@@ -405,6 +430,7 @@ export function trace(figure: string): Trace {
       figure,
       'Came In',
       entries.filter((e) => REVENUE_KINDS.includes(e.kind)).map((entry) => ({ entry, amount: entry.lines.find((l) => l.credit > 0)!.credit })),
+      REVENUE_ACCOUNTS,
     );
   }
   if (figure === 'went_out') {
@@ -412,6 +438,7 @@ export function trace(figure: string): Trace {
       figure,
       'Went Out',
       entries.filter((e) => e.kind === 'expense_approved').map((entry) => ({ entry, amount: entry.lines.find((l) => l.debit > 0 && l.account !== '2000')!.debit })),
+      EXPENSE_ACCOUNTS,
     );
   }
   if (figure === 'cash') {
@@ -419,6 +446,7 @@ export function trace(figure: string): Trace {
       figure,
       'Cash',
       entries.filter((e) => e.lines.some((l) => l.account === '1000')).map((entry) => ({ entry, amount: accountSignedAmount('1000', entry.lines.find((l) => l.account === '1000')!) })),
+      ['1000'],
     );
   }
   if (figure === 'payable') {
@@ -426,6 +454,7 @@ export function trace(figure: string): Trace {
       figure,
       'Payable',
       entries.filter((e) => e.lines.some((l) => l.account === '2000')).map((entry) => ({ entry, amount: accountSignedAmount('2000', entry.lines.find((l) => l.account === '2000')!) })),
+      ['2000'],
     );
   }
   if (figure.startsWith('account:')) {
@@ -436,6 +465,7 @@ export function trace(figure: string): Trace {
       figure,
       account.name,
       entries.filter((e) => e.lines.some((l) => l.account === code)).map((entry) => ({ entry, amount: accountSignedAmount(code, entry.lines.find((l) => l.account === code)!) })),
+      [code],
     );
   }
   if (figure.startsWith('event:')) {
@@ -450,6 +480,7 @@ export function trace(figure: string): Trace {
         figure,
         `${event!.title}: revenue`,
         entries.filter((e) => e.event === eventId && REVENUE_KINDS.includes(e.kind)).map((entry) => ({ entry, amount: entry.lines.find((l) => l.credit > 0)!.credit })),
+        REVENUE_ACCOUNTS,
       );
     }
     if (sub === 'expenses') {
@@ -459,6 +490,7 @@ export function trace(figure: string): Trace {
         entries
           .filter((e) => e.event === eventId && e.kind === 'expense_approved')
           .map((entry) => ({ entry, amount: entry.lines.find((l) => l.debit > 0 && l.account !== '2000')!.debit })),
+        EXPENSE_ACCOUNTS,
       );
     }
     // profit: revenue positive, expenses negative, per the contract's note.
@@ -468,7 +500,7 @@ export function trace(figure: string): Trace {
     const expenseEntries = entries
       .filter((e) => e.event === eventId && e.kind === 'expense_approved')
       .map((entry) => ({ entry, amount: -entry.lines.find((l) => l.debit > 0 && l.account !== '2000')!.debit }));
-    return entriesToTrace(figure, `${event!.title}: profit`, [...revenueEntries, ...expenseEntries]);
+    return entriesToTrace(figure, `${event!.title}: profit`, [...revenueEntries, ...expenseEntries], [...REVENUE_ACCOUNTS, ...EXPENSE_ACCOUNTS]);
   }
 
   unknownFigure();

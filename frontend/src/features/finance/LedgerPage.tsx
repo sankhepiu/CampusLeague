@@ -10,6 +10,7 @@ import { ACCOUNT_LIST } from './accountCodes';
 import { CoinTrail } from './CoinTrail';
 import type { LedgerEntry, LedgerKind } from './types';
 import styles from './LedgerPage.module.scss';
+import { formatDateOnly } from '../../core/utils/formatDateTime';
 
 const KIND_OPTIONS: { value: LedgerKind | ''; label: string }[] = [
   { value: '', label: 'All kinds' },
@@ -56,39 +57,46 @@ export function LedgerPage() {
   );
 
   const columns: DataTableColumn<LedgerEntry>[] = [
-    { key: 'date', header: 'Date', render: (e) => new Date(e.postedAt).toLocaleDateString('en-IN') },
-    { key: 'description', header: 'Description', render: (e) => e.description },
+    { key: 'date', header: 'Date', render: (e) => formatDateOnly(e.postedAt) },
+    { key: 'description', header: 'Description', wrap: true, render: (e) => e.description },
     { key: 'kind', header: 'Kind', render: (e) => e.kind.replace(/_/g, ' ') },
     { key: 'event', header: 'Event', render: (e) => (e.event !== null ? `#${e.event}` : '—') },
+    {
+      key: 'account',
+      header: 'Account',
+      render: (e) => (
+        <div className={styles.lineStack}>
+          {e.lines.map((line) => (
+            <div key={line.id}>
+              {line.account.code} {line.account.name}
+            </div>
+          ))}
+        </div>
+      ),
+    },
     {
       key: 'debit',
       header: 'Debit',
       align: 'right',
-      render: (e) => {
-        const line = e.lines.find((l) => l.debit > 0);
-        return line ? (
-          <span className={styles.ledgerSide}>
-            {line.account.code} <Money paise={line.debit} />
-          </span>
-        ) : (
-          '—'
-        );
-      },
+      render: (e) => (
+        <div className={styles.lineStack}>
+          {e.lines.map((line) => (
+            <div key={line.id}>{line.debit > 0 ? <Money paise={line.debit} /> : '—'}</div>
+          ))}
+        </div>
+      ),
     },
     {
       key: 'credit',
       header: 'Credit',
       align: 'right',
-      render: (e) => {
-        const line = e.lines.find((l) => l.credit > 0);
-        return line ? (
-          <span className={styles.ledgerSide}>
-            {line.account.code} <Money paise={line.credit} />
-          </span>
-        ) : (
-          '—'
-        );
-      },
+      render: (e) => (
+        <div className={styles.lineStack}>
+          {e.lines.map((line) => (
+            <div key={line.id}>{line.credit > 0 ? <Money paise={line.credit} /> : '—'}</div>
+          ))}
+        </div>
+      ),
     },
     {
       key: 'trail',

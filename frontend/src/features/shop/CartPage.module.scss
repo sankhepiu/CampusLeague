@@ -123,3 +123,17 @@
   text-align: center;
   padding: 1rem 0;
 }
+
+// Payment step.
+.payLines {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+}
+
+.pendingNote {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 4px solid var(--cl-gold);
+  background: var(--cl-color-bg-raised);
+}

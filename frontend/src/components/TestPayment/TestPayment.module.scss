@@ -1,0 +1,81 @@
+@use '../../styles/mixins';
+
+.box {
+  margin: 1rem 0;
+  padding: 0.9rem 1rem 1rem;
+  border: 3px dashed var(--cl-gold);
+  background: var(--cl-color-bg-raised);
+  min-width: 0; // lets the fieldset shrink on narrow screens
+}
+
+.legend {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.6rem;
+  color: var(--cl-base);
+  background: var(--cl-gold);
+}
+
+.note {
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.6rem;
+}
+
+.option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.5rem;
+  row-gap: 0.2rem;
+  align-items: center;
+  padding: 0.6rem 0.7rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg);
+  cursor: pointer;
+}
+
+.option:hover {
+  border-color: var(--cl-color-secondary);
+}
+
+.optionSelected {
+  border-color: var(--cl-gold);
+}
+
+.radio {
+  @include mixins.focus-ring;
+  margin: 0;
+  accent-color: var(--cl-gold);
+}
+
+.optionTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+}
+
+.optionDetail {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+  color: var(--cl-color-text-muted);
+}
+
+.box:disabled .option {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.replay {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  border-left: 4px solid var(--cl-gold);
+  background: var(--cl-color-bg-raised);
+}
