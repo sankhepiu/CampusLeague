@@ -88,7 +88,9 @@ export interface TraceMerchItem {
 }
 
 export interface TraceOrderDetails {
-  order: number;
+  // GAP: the live backend doesn't send `order` on a merch order source yet
+  // (teammate is adding it) — optional until then, not force-unwrapped.
+  order?: number;
   buyer: string;
   items: TraceMerchItem[];
 }
@@ -100,9 +102,12 @@ export interface TracePaymentDetails {
 
 export interface TraceExpenseDetails {
   requester: string;
-  description: string;
+  // GAP: the live backend doesn't send `description`/`approved_by` on an
+  // expense_request source yet (teammate is adding it) — optional until
+  // then; CoinTrail renders a dash rather than "undefined" for these.
+  description?: string;
   receiptUrl: string;
-  approvedBy: string | null;
+  approvedBy?: string | null;
 }
 
 export interface TraceFundraiserSaleDetails {
