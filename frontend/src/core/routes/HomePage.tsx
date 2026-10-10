@@ -19,12 +19,14 @@ export function HomePage() {
 
   if (!user) return null;
   const items = navItemsForRoles(user.roles);
-  const primaryRoleLabel = ROLE_LABELS[user.roles[0]];
+  // An ordinary signed-up user has no committee role at all (roles: []) —
+  // being a paid-up member is tracked separately via membershipStatus.
+  const dashboardTitle = user.roles[0] ? ROLE_LABELS[user.roles[0]] : 'Member';
 
   return (
     <div className={styles.wrapper}>
       <p className={styles.greeting}>Welcome back, {user.name.split(' ')[0]}</p>
-      <h1 className={styles.title}>{primaryRoleLabel} Dashboard</h1>
+      <h1 className={styles.title}>{dashboardTitle} Dashboard</h1>
 
       {items.length === 0 ? (
         <Panel>

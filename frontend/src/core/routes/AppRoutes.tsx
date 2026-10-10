@@ -6,7 +6,10 @@ import { AppLayout } from './AppLayout';
 import { ProtectedRoute } from './ProtectedRoute';
 import { LoginPage } from '../../features/auth/LoginPage';
 import { SignupPage } from '../../features/auth/SignupPage';
+import { SettingsPage } from '../../features/settings/SettingsPage';
 import { MembershipPage } from '../../features/membership/MembershipPage';
+import { MemberCardPage } from '../../features/membership/MemberCardPage';
+import { MembersPage } from '../../features/members/MembersPage';
 import { EventsPage } from '../../features/events/EventsPage';
 import { TicketsPage } from '../../features/tickets/TicketsPage';
 import { ShopPage } from '../../features/shop/ShopPage';
@@ -36,7 +39,9 @@ export function AppRoutes() {
         }
       >
         <Route path="/home" element={<HomePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/membership" element={<MembershipPage />} />
+        <Route path="/membership/card" element={<MemberCardPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/tickets" element={<TicketsPage />} />
         <Route path="/shop" element={<ShopPage />} />
@@ -48,6 +53,14 @@ export function AppRoutes() {
           element={
             <ProtectedRoute roles={FEATURE_ACCESS.announcements}>
               <AnnouncementsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/members"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.members}>
+              <MembersPage />
             </ProtectedRoute>
           }
         />

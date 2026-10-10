@@ -1,0 +1,39 @@
+@use '../../styles/mixins';
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.track {
+  @include mixins.pixel-border($width: 3px);
+  @include mixins.focus-ring;
+  position: relative;
+  width: 3.4rem;
+  height: 1.8rem;
+  padding: 2px;
+  background: var(--cl-color-bg-raised);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.track[aria-checked='true'] {
+  background: var(--cl-color-primary-dark);
+}
+
+.thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(1.8rem - 4px - 6px);
+  height: calc(1.8rem - 4px - 6px);
+  background: var(--cl-color-text);
+  transition: transform 0.12s ease-out;
+}
+
+.track[aria-checked='true'] .thumb {
+  transform: translateX(1.6rem);
+  background: var(--cl-base);
+}

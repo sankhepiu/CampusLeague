@@ -1,128 +1,76 @@
 import { ApiRequestError, session } from '../../api/client';
 import type { AuthUser, LoginRequest, SignupRequest } from './types';
+import { createUser, DEMO_ACCOUNT_EMAILS, findUserByEmail, getCurrentMockUser, MOCK_TOKEN_PREFIX } from './mockUsers';
 
-/** Deterministic demo accounts so manual testers can switch roles without a backend.
- * Any password is accepted in mock mode. */
-const MOCK_USERS: Record<string, AuthUser> = {
-  'member@campusleague.dev': {
-    id: 'user-member-1',
-    name: 'Mia Member',
-    email: 'member@campusleague.dev',
-    roles: ['member'],
-  },
-  'organizer@campusleague.dev': {
-    id: 'user-organizer-1',
-    name: 'Omar Organizer',
-    email: 'organizer@campusleague.dev',
-    roles: ['organizer', 'member'],
-  },
-  'admin@campusleague.dev': {
-    id: 'user-admin-1',
-    name: 'Ada Admin',
-    email: 'admin@campusleague.dev',
-    roles: ['admin', 'organizer', 'member'],
-  },
-};
-
-// Accounts created through the mock "Sign up" form, persisted so a refresh
-// doesn't lose them. Separate from MOCK_USERS so the three demo accounts
-// above always stay pristine/resettable.
-const SIGNUPS_KEY = 'campusleague.mock.signups';
-
-function loadSignedUpUsers(): Record<string, AuthUser> {
-  try {
-    const raw = localStorage.getItem(SIGNUPS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, AuthUser>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveSignedUpUser(user: AuthUser): void {
-  try {
-    const all = loadSignedUpUsers();
-    all[user.email] = user;
-    localStorage.setItem(SIGNUPS_KEY, JSON.stringify(all));
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-function findUserByEmail(email: string): AuthUser | undefined {
-  const key = email.trim().toLowerCase();
-  return MOCK_USERS[key] ?? loadSignedUpUsers()[key];
-}
-
-function findUserById(id: string): AuthUser | undefined {
-  return (
-    Object.values(MOCK_USERS).find((u) => u.id === id) ??
-    Object.values(loadSignedUpUsers()).find((u) => u.id === id)
-  );
-}
-
-const MOCK_TOKEN_PREFIX = 'mock-token::';
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-let signupCounter = 0;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const mockAuthApi = {
-  async login({ email }: LoginRequest): Promise<AuthUser> {
+  async login({ email, password }: LoginRequest): Promise<AuthUser> {
     await delay(400);
+    if (!email.trim() || !password) {
+      throw new ApiRequestError({
+        code: 'validation_error',
+        message: 'Email and password are required.',
+        field: !email.trim() ? 'email' : 'password',
+      });
+    }
+    // Mock mode accepts any password for a known email, matching the real
+    // endpoint's "wrong email, wrong password... response is identical" rule
+    // only in that we never reveal *which* part was wrong.
     const user = findUserByEmail(email);
     if (!user) {
-      throw new ApiRequestError({
-        code: 'INVALID_CREDENTIALS',
-        message: 'No account matches that email. Try signing up instead.',
-        field: 'email',
-      });
+      throw new ApiRequestError({ code: 'invalid_credentials', message: 'Incorrect email or password.' });
     }
     session.setToken(`${MOCK_TOKEN_PREFIX}${user.id}`);
     return user;
   },
 
-  async signup({ name, email, collegeId, password }: SignupRequest): Promise<AuthUser> {
+  async signup({ name, email, collegeId, password, phone }: SignupRequest): Promise<AuthUser> {
     await delay(450);
     const normalizedEmail = email.trim().toLowerCase();
+    const errors: { field: string; code: string; message: string }[] = [];
 
-    if (!name.trim()) {
-      throw new ApiRequestError({ code: 'REQUIRED', message: 'Name is required.', field: 'name' });
-    }
-    if (!collegeId.trim()) {
-      throw new ApiRequestError({ code: 'REQUIRED', message: 'College ID is required.', field: 'collegeId' });
+    if (!name.trim()) errors.push({ field: 'name', code: 'blank', message: 'This field may not be blank.' });
+    if (!collegeId.trim()) errors.push({ field: 'college_id', code: 'blank', message: 'This field may not be blank.' });
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      errors.push({ field: 'email', code: 'invalid', message: 'Enter a valid email address.' });
+    } else if (findUserByEmail(normalizedEmail)) {
+      errors.push({ field: 'email', code: 'email_taken', message: 'An account with this email already exists.' });
     }
     if (password.length < 8) {
-      throw new ApiRequestError({
-        code: 'PASSWORD_TOO_SHORT',
-        message: 'Password must be at least 8 characters.',
-        field: 'password',
-      });
+      errors.push({ field: 'password', code: 'password_too_short', message: 'Password must be at least 8 characters.' });
     }
-    if (findUserByEmail(normalizedEmail)) {
+
+    if (errors.length > 0) {
       throw new ApiRequestError({
-        code: 'EMAIL_TAKEN',
-        message: 'An account with this email already exists.',
-        field: 'email',
+        code: 'validation_error',
+        message: errors[0].message,
+        field: errors[0].field,
+        errors,
       });
     }
 
-    // New accounts always start as a plain member — roles are never
-    // self-assigned on the client, only ever returned by the server.
-    const user: AuthUser = {
-      id: `user-signup-${Date.now()}-${++signupCounter}`,
+    // New accounts always start as a plain member with no committee role and
+    // no membership — roles and membershipStatus are never client-chosen,
+    // they only ever come back from the server.
+    const user = createUser({
       name: name.trim(),
       email: normalizedEmail,
-      roles: ['member'],
-    };
-    saveSignedUpUser(user);
+      collegeId: collegeId.trim(),
+      phone: phone?.trim() ?? '',
+      roles: [],
+      membershipStatus: 'none',
+    });
     session.setToken(`${MOCK_TOKEN_PREFIX}${user.id}`);
     return user;
   },
 
   async me(): Promise<AuthUser> {
     await delay(250);
-    const token = session.getToken();
-    const user = token?.startsWith(MOCK_TOKEN_PREFIX) ? findUserById(token.slice(MOCK_TOKEN_PREFIX.length)) : undefined;
+    const user = getCurrentMockUser();
     if (!user) {
-      throw new ApiRequestError({ code: 'UNAUTHORIZED', message: 'No active session.' });
+      throw new ApiRequestError({ code: 'not_authenticated', message: 'No active session.' });
     }
     return user;
   },
@@ -133,5 +81,5 @@ export const mockAuthApi = {
   },
 
   /** Exposed for the login screen so it can list demo accounts. */
-  demoAccounts: Object.values(MOCK_USERS),
+  demoAccounts: DEMO_ACCOUNT_EMAILS.map((email) => findUserByEmail(email)).filter((u): u is AuthUser => !!u),
 };

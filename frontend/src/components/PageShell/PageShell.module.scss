@@ -4,6 +4,15 @@
   padding: 2rem 1.25rem 4rem;
 }
 
+// Dotted decorative backdrop for member-facing screens (Membership, Member
+// Card, Settings), recolored to the palette — distinct from the global
+// moving-grid backdrop (see styles/_backdrop.scss) so these areas read as
+// their own "zone." Scoped to the page content, not the full viewport.
+.dotted {
+  background-image: radial-gradient(var(--cl-border) 1.5px, transparent 1.5px);
+  background-size: 20px 20px;
+}
+
 .header {
   display: flex;
   align-items: baseline;

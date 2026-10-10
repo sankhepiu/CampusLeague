@@ -1,0 +1,111 @@
+@use '../../styles/mixins';
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--cl-color-primary-dark);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.buttonSecondary {
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.statusText {
+  color: var(--cl-color-text-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.planName {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.planPrice {
+  font-size: 1.6rem;
+  margin: 0 0 0.25rem;
+}
+
+.planDuration {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+}
+
+.benefits {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.25rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.benefits li {
+  font-size: 0.9rem;
+  color: var(--cl-color-text-muted);
+}
+
+.benefits li::before {
+  content: '— ';
+  color: var(--cl-color-success);
+}
+
+.planButton {
+  width: 100%;
+}
+
+.checkout {
+  margin-top: 1.5rem;
+}
+
+.checkoutRow {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.testOutcome {
+  margin: 1rem 0;
+}
+
+.checkoutActions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.successBox {
+  text-align: center;
+  padding: 1rem 0;
+}

@@ -2,16 +2,14 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../core/hooks/useAuth';
 import { useOptions } from '../../core/hooks/useOptions';
 import { useSound } from '../../core/hooks/useSound';
-import { useAchievements } from '../../core/hooks/useAchievements';
 import { navItemsForRoles } from '../../core/routes/navItems';
 import { PixelIcon } from '../PixelIcon';
 import styles from './TopBar.module.scss';
 
 export function TopBar() {
   const { user, logout } = useAuth();
-  const { options, toggleMuted, toggleReducedMotion } = useOptions();
+  const { options, toggleMuted } = useOptions();
   const { playSound } = useSound();
-  const { unlock } = useAchievements();
 
   if (!user) return null;
   const items = navItemsForRoles(user.roles);
@@ -51,20 +49,15 @@ export function TopBar() {
         >
           {options.muted ? '🔇' : '🔊'}
         </button>
-        <button
-          type="button"
+        <NavLink
+          to="/settings"
           className={styles.iconButton}
-          onClick={() => {
-            toggleReducedMotion();
-            unlock('tinkerer');
-            playSound('confirm');
-          }}
-          aria-pressed={options.reducedMotion}
-          aria-label="Toggle reduced motion"
-          title="Toggle reduced motion"
+          onClick={() => playSound('select')}
+          aria-label="Settings"
+          title="Settings"
         >
           ⚙
-        </button>
+        </NavLink>
         <button
           type="button"
           className={styles.logout}
