@@ -230,14 +230,12 @@ function SourceView({ source }: { source: TraceSource }) {
           </div>
           <div className={styles.kv}>
             <span>Description</span>
-            <span>{source.details.description}</span>
+            <span>{source.details.description ?? '—'}</span>
           </div>
-          {source.details.approvedBy && (
-            <div className={styles.kv}>
-              <span>Approved By</span>
-              <span>{source.details.approvedBy}</span>
-            </div>
-          )}
+          <div className={styles.kv}>
+            <span>Approved By</span>
+            <span>{source.details.approvedBy ?? '—'}</span>
+          </div>
           {source.details.receiptUrl && (
             <a href={source.details.receiptUrl} target="_blank" rel="noreferrer" className={styles.receiptLink}>
               View Receipt
