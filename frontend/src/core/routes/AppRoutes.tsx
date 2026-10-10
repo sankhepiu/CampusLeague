@@ -11,6 +11,8 @@ import { MembershipPage } from '../../features/membership/MembershipPage';
 import { MemberCardPage } from '../../features/membership/MemberCardPage';
 import { MembersPage } from '../../features/members/MembersPage';
 import { EventsPage } from '../../features/events/EventsPage';
+import { EventDetailPage } from '../../features/events/EventDetailPage';
+import { EventAdminPage } from '../../features/events/EventAdminPage';
 import { TicketsPage } from '../../features/tickets/TicketsPage';
 import { ShopPage } from '../../features/shop/ShopPage';
 import { OrdersPage } from '../../features/orders/OrdersPage';
@@ -31,6 +33,14 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
 
+      {/* Public per the contract (GET /events, GET /events/{id} — "Who: Public").
+          Still rendered inside AppLayout for a consistent header/footer;
+          TopBar itself handles the logged-out ("guest") case. */}
+      <Route element={<AppLayout />}>
+        <Route path="/events" element={<EventsPage />} />
+        <Route path="/events/:id" element={<EventDetailPage />} />
+      </Route>
+
       <Route
         element={
           <ProtectedRoute>
@@ -42,11 +52,27 @@ export function AppRoutes() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/membership" element={<MembershipPage />} />
         <Route path="/membership/card" element={<MemberCardPage />} />
-        <Route path="/events" element={<EventsPage />} />
         <Route path="/tickets" element={<TicketsPage />} />
         <Route path="/shop" element={<ShopPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/volunteering" element={<VolunteeringPage />} />
+
+        <Route
+          path="/events/new"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.eventAdmin}>
+              <EventAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/events/:id/edit"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.eventAdmin}>
+              <EventAdminPage />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/announcements"

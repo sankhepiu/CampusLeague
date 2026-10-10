@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../core/hooks/useAuth';
 import { useOptions } from '../../core/hooks/useOptions';
 import { useSound } from '../../core/hooks/useSound';
@@ -10,8 +10,26 @@ export function TopBar() {
   const { user, logout } = useAuth();
   const { options, toggleMuted } = useOptions();
   const { playSound } = useSound();
+  const location = useLocation();
 
-  if (!user) return null;
+  if (!user) {
+    // A handful of pages (events browsing) are public — still show a brand
+    // header with a way in, rather than nothing at all.
+    return (
+      <header className={styles.bar}>
+        <NavLink to="/" className={styles.brand}>
+          <PixelIcon name="coin" size={22} />
+          Campus League
+        </NavLink>
+        <div className={styles.controls}>
+          <NavLink to="/login" state={{ from: location.pathname }} className={styles.logout} style={{ borderColor: 'var(--cl-color-primary)', color: 'var(--cl-color-primary)' }}>
+            Log In
+          </NavLink>
+        </div>
+      </header>
+    );
+  }
+
   const items = navItemsForRoles(user.roles);
 
   return (

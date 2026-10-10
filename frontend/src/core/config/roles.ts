@@ -26,7 +26,11 @@ export const FEATURE_ACCESS = {
   volunteering: null,
   announcements: null,
   members: ['president', 'treasurer', 'event_manager'],
-  checkin: ['president', 'treasurer', 'event_manager'],
+  // Check-in reveals membership status to whoever is scanning, so it's
+  // deliberately narrower than most staff areas — contract is explicit:
+  // "President or event manager only."
+  checkin: ['president', 'event_manager'],
+  eventAdmin: ['president', 'event_manager'],
   expenses: ['president', 'treasurer', 'volunteer_coordinator'],
   finance: ['president', 'treasurer'],
   insights: ['president', 'treasurer', 'event_manager'],

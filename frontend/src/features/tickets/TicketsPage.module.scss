@@ -1,0 +1,119 @@
+@use '../../styles/mixins';
+
+.list {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.eventTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+}
+
+.meta {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.25rem;
+}
+
+.price {
+  font-size: 1.1rem;
+}
+
+.showButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.pageButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.pageButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+// "Show to scanner" — full-brightness, maximum-contrast overlay readable at
+// arm's length in a dim doorway.
+.scannerOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: #ffffff;
+  color: #0b0a1a;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.scannerCard {
+  text-align: center;
+  max-width: 24rem;
+}
+
+.scannerTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 1rem;
+  margin: 0 0 1rem;
+}
+
+.scannerQr {
+  background: #ffffff;
+  display: inline-block;
+}
+
+.scannerCode {
+  font-family: var(--cl-font-pixel);
+  font-size: 1.5rem;
+  letter-spacing: 0.2rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.scannerMeta {
+  color: #444;
+  margin: 0.25rem 0;
+}
+
+.closeButton {
+  @include mixins.pressable;
+  margin-top: 1.5rem;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.7rem 1.2rem;
+  border: 3px solid #0b0a1a;
+  background: #0b0a1a;
+  color: #ffffff;
+  cursor: pointer;
+}
