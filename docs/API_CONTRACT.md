@@ -310,7 +310,7 @@ Responses:
     "payment_ref": "mock_5b1f0c3e9a7d4e2f8c6b1a0d9e8f7a6b",
     "created_at": "2026-10-10T11:42:07.123456+05:30",
     "lines": [
-      { "id": 15, "kind": "membership", "plan": 1, "qty": 1, "unit_price": 50000 }
+      { "id": 15, "kind": "membership", "plan": 1, "tier": null, "qty": 1, "unit_price": 50000 }
     ]
   },
   "payment": {
@@ -380,3 +380,181 @@ Response `200`:
 ```
 
 Errors: `401 not_authenticated`, `401 authentication_failed`.
+
+---
+
+## GET /roles, POST /roles
+
+Assign roles with terms. Requirement: R19.
+
+- **Who:** President only (`403 permission_denied` for everyone else,
+  including a president whose term has ended or not yet started).
+- **Database:** POST creates one role assignment and one audit-log row
+  (`role.assigned`), together or not at all.
+
+POST request:
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `user` | integer | yes | Id of an existing user. |
+| `role` | string | yes | `president`, `treasurer`, `event_manager`, `volunteer_coordinator` or `member`. |
+| `term_start`, `term_end` | date | yes | Both days included; `term_end` not before `term_start` (`term_end_before_start`). |
+
+Response `201`: `{ "id", "user", "role", "term_start", "term_end", "created_at" }`.
+GET returns a paginated list of the same objects.
+
+## Event and tier objects
+
+Event:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `title`, `description`, `venue` | string | |
+| `starts_at`, `ends_at` | timestamp | |
+| `capacity_total` | integer | |
+| `status` | string | `draft`, `on_sale` or `closed`. **Assumption:** drafts are returned to event staff only; others get `404`. |
+| `tiers` | tier[] | Cheapest first. |
+
+Tier:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `name` | string | Unique within the event. |
+| `public_price`, `member_price` | integer | Paise. Both greater than zero (**Assumption:** no free tickets yet). |
+| `price` | integer | What **the caller** would pay now: `member_price` if logged in with an active membership, otherwise `public_price`. Display this one. |
+| `capacity` | integer | |
+| `seats_left` | integer | For "X seats left". `0` means sold out. |
+| `sale_opens`, `sale_closes` | timestamp or `null` | **Assumption:** `null` means no limit on that side. |
+
+## GET /events, GET /events/{id}
+
+Requirements: R6, R7, R8.
+
+- **Who:** Public. Send the token when logged in so `price` reflects membership.
+- **Database:** read only.
+
+Response `200`: a paginated list of events, or one event.
+
+## POST /events, PATCH /events/{id}, POST /events/{id}/tiers
+
+- **Who:** President or event manager.
+- **Event fields:** `title`, `venue`, `starts_at`, `ends_at`, `capacity_total`
+  (required on create); `description`, `status` (default `draft`),
+  `budget_amount` (paise, default 0, never returned by the public endpoints).
+  PATCH accepts any subset. PUT is not supported.
+- **Tier fields:** `name`, `public_price`, `member_price`, `capacity`
+  (required); `sale_opens`, `sale_closes`.
+- **Rules:** the event must end after it starts (`ends_before_start`); a
+  tier's capacity must fit in what `capacity_total` has left
+  (`exceeds_event_capacity`); `capacity_total` cannot be lowered below the
+  tiers' total (`below_tier_capacity`); tier names are unique per event
+  (`tier_name_taken`). `sold_count` cannot be set through the API.
+
+Responses: `201` (or `200` for PATCH) with the event or tier object.
+Errors: `400 validation_error`, `401`, `403 permission_denied`, `404 not_found`.
+
+## POST /events/{id}/tickets
+
+Buy tickets in one tier. Requirements: R6, R7, R8.
+
+- **Who:** Any logged-in user.
+- **Database:** in one transaction, with the tier row locked: seat check,
+  order with one line, payment, `sold_count` increase, one ticket per seat,
+  and one ledger entry (debit Cash 1000, credit Ticket revenue 4100, tagged
+  with the event). If any part fails, none of it is saved.
+- **Price:** decided on the server at purchase time. Any price in the body is
+  ignored.
+- **Header:** `Idempotency-Key`, exactly as for `POST /memberships`.
+
+Request:
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `tier` | integer | yes | A tier of this event. |
+| `quantity` | integer | no | 1 to 10, default 1. **Assumption:** 10 is the most in one purchase. |
+| `test_outcome` | string | no | `success` (default), `failure`, `pending`. |
+
+Responses: `201` (or `200` on a replay) with `order`, `payment` and `tickets`;
+`202` when pending (`tickets` is `[]`, no seat is held).
+
+Ticket object:
+
+```json
+{
+  "id": 31,
+  "code": "K7MPQ2XD",
+  "qr_token": "eyJ0IjozMSwiZSI6Mn0:1vAbCd:Jx3...",
+  "status": "valid",
+  "price_paid": 60000,
+  "event": { "id": 2, "title": "Spring Gala", "venue": "Main Hall", "starts_at": "2026-11-09T18:00:00+05:30" },
+  "tier": { "id": 5, "name": "General" },
+  "created_at": "2026-10-10T12:30:00+05:30"
+}
+```
+
+Render `qr_token` as the QR code exactly as received; do not parse it. Show
+`code` as text beside it for manual entry. `status` is `valid`, `checked_in`
+or `cancelled`.
+
+Errors:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `idempotency_key_required` | Header missing or malformed. |
+| 400 | `validation_error` | `tier` not part of this event (`does_not_exist`); `quantity` out of range. |
+| 402 | `payment_failed` | `test_outcome: failure`. No seat taken. |
+| 404 | `not_found` | No such event (or it is a draft). |
+| 409 | `sold_out` | Fewer seats left than requested. Nothing was created. |
+| 409 | `sales_closed` | Event not `on_sale`, or outside the tier's sale window. |
+| 409 | `idempotency_key_reused` | Key already paid for a different purchase. |
+
+## GET /tickets/me
+
+- **Who:** Any logged-in user. Only the caller's own tickets, newest first.
+
+Response `200`: a paginated list of ticket objects.
+
+## POST /checkin
+
+Scan a ticket at the door. Requirements: R5, R9.
+
+- **Who:** President or event manager only, because the answer reveals
+  membership status.
+- **Database:** for a valid, unused ticket: one check-in row (unique per
+  ticket) and the ticket becomes `checked_in`.
+
+Request: exactly one of `token` or `code`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `token` | string | The scanned QR content. |
+| `code` | string | The short code typed by hand; case, spaces and dashes are ignored. |
+| `event` | integer | Optional. **Assumption:** the event being scanned for; a ticket for any other event is `invalid`. |
+
+Response: **always `200`** with one result object (the plan's shape):
+
+```json
+{
+  "result": "ok",
+  "ticket": { "id": 31, "code": "K7MPQ2XD", "status": "checked_in", "event": { "id": 2, "title": "Spring Gala" }, "tier": { "id": 5, "name": "General" } },
+  "holder_name": "Priya",
+  "membership_status": "active",
+  "checked_in_at": "2026-11-09T18:05:12+05:30",
+  "checked_in_by": "Dev"
+}
+```
+
+| `result` | Meaning | Other fields |
+|---|---|---|
+| `ok` | Admitted now. | All set. |
+| `already_checked_in` | Scanned before. Do not admit again. | `checked_in_at` and `checked_in_by` are the **original** scan; `membership_status` is as recorded then. |
+| `cancelled` | Ticket was cancelled. | `ticket`, `holder_name`, `membership_status` set; check-in fields `null`. |
+| `invalid` | Forged, altered, unknown, or for another event. | Everything else `null`. |
+
+Show "Active member" only when `membership_status` is `active`; `lapsed` and
+`none` are both "Not a member".
+
+Errors: `400 validation_error` (neither or both of `token` and `code`),
+`401`, `403 permission_denied`.
