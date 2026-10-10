@@ -1,6 +1,7 @@
 import calendar
 from datetime import timedelta
 
+from django.db.models import Case, Exists, OuterRef, Value, When
 from django.utils import timezone
 
 from .models import Membership
@@ -78,3 +79,19 @@ def start_membership(user, plan, today=None):
         start_date=start,
         end_date=add_months(start, plan.duration_months),
     )
+
+
+def with_membership_status(users, today=None):
+    """Annotate a user queryset with membership_status, using the same rule
+    as membership_status() above but in SQL, so a list can be filtered and
+    paginated by it without one query per user.
+    """
+    today = today or timezone.localdate()
+    memberships = Membership.objects.filter(user=OuterRef('pk'))
+    covers_today = memberships.filter(status=ACTIVE, start_date__lte=today, end_date__gte=today)
+    ended = memberships.filter(status__in=[ACTIVE, LAPSED], end_date__lt=today)
+    return users.annotate(membership_status=Case(
+        When(Exists(covers_today), then=Value('active')),
+        When(Exists(ended), then=Value('lapsed')),
+        default=Value('none'),
+    ))

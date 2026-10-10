@@ -4,7 +4,7 @@ from events.tickets import scan
 from finance import expenses, reports
 from finance.models import ExpenseRequest
 from members.tests.test_services import make_plan
-from shop.models import OrderLine, ProductSize
+from shop.models import Order, OrderLine, ProductSize
 from shop.payments import purchase_membership, purchase_merch, purchase_tickets
 from shop.tests.helpers import make_product, size_of
 from volunteering.models import Fundraiser
@@ -162,7 +162,15 @@ class TraceTests(FinanceTestCase):
         expense_entries = by_type['expense_request']
         self.assertEqual(sorted(e['amount'] for e in expense_entries), [-70000, -20000])
         self.assertIn('receipts/', expense_entries[0]['source']['details']['receipt_url'])
-        self.assertEqual(expense_entries[0]['source']['details']['approved_by'], self.treasurer.name)
+        details = {entry['amount']: entry['source']['details'] for entry in expense_entries}
+        self.assertEqual(
+            (details[-70000]['description'], details[-70000]['approved_by']), ('Catering', self.treasurer.name),
+        )
+        self.assertEqual(
+            (details[-20000]['description'], details[-20000]['approved_by']), ('Decorations', self.treasurer.name),
+        )
+        for entry in expense_entries:
+            self.assertGreaterEqual(set(entry['source']['details']), {'description', 'approved_by'})
 
     def test_event_revenue_and_expenses_separately(self):
         self.assertEqual(self.trace(f'event:{self.event.id}:revenue')['total'], 120000)
@@ -176,6 +184,10 @@ class TraceTests(FinanceTestCase):
         dues = self.trace('account:4000')['entries'][0]['source']
         self.assertEqual((dues['type'], dues['details']['member']), ('payment', 'Priya'))
         merch = self.trace('account:4200')['entries'][0]['source']
+        merch_order = Order.objects.get(lines__kind='merch')
+        self.assertEqual(merch['type'], 'order')
+        self.assertEqual(merch['details']['order'], merch_order.id)
+        self.assertEqual(merch['details']['order'], merch['id'])
         self.assertEqual(merch['details']['items'], [
             {'product': 'Hoodie', 'size': 'M', 'qty': 1, 'unit_price': 120000, 'discount': 12000, 'paid': 108000},
         ])
@@ -187,6 +199,27 @@ class TraceTests(FinanceTestCase):
             with self.subTest(figure=figure):
                 response = self.client.get('/api/finance/trace', {'figure': figure})
                 self.assert_error(response, 400, 'validation_error', field='figure')
+
+
+class TraceApproverTests(FinanceTestCase):
+    def test_approved_by_is_null_unless_the_decision_was_an_approval(self):
+        from finance.reports import _source
+
+        class Entry:
+            source_type, description = 'expense_request', ''
+
+        undecided = self.expense(1000, 'Undecided')
+        Entry.source_id = undecided.pk
+        details = _source(Entry)['details']
+        self.assertEqual((details['description'], details['approved_by']), ('Undecided', None))
+
+        rejected = self.expense(2000, 'Rejected')
+        expenses.reject(rejected.pk, self.treasurer, 'No')
+        Entry.source_id = rejected.pk
+        self.assertIsNone(_source(Entry)['details']['approved_by'])
+
+        Entry.source_id = self.paid.pk
+        self.assertEqual(_source(Entry)['details']['approved_by'], self.treasurer.name)
 
 
 class FinancePermissionTests(FinanceTestCase):

@@ -1,9 +1,15 @@
+from django.contrib.auth import get_user_model
+from django.db.models import Prefetch, Q
+from django.utils import timezone
 from rest_framework import status
+from rest_framework.exceptions import ErrorDetail, ValidationError
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.models import RoleAssignment
+from accounts.permissions import has_role
 from shop.api import IdempotencyKeyReused, PaymentFailed, idempotency_key
 from shop.models import Order
 from shop.payments import IdempotencyConflict, purchase_membership
@@ -11,7 +17,9 @@ from shop.serializers import OrderSerializer, PaymentSerializer
 
 from . import services
 from .models import MembershipPlan
-from .serializers import MembershipPurchaseSerializer, MembershipSerializer, PlanSerializer
+from .serializers import (
+    MemberSerializer, MembershipPurchaseSerializer, MembershipSerializer, PlanSerializer,
+)
 
 
 class PlanListView(ListAPIView):
@@ -72,3 +80,38 @@ class MyMembershipView(APIView):
             'membership': MembershipSerializer(current).data if current else None,
             'paid_until': services.paid_until(user),
         })
+
+
+class MemberListView(ListAPIView):
+    """GET /members. Plan API table: "P, T, EM. Member list and detail with
+    status."
+
+    ?status=active|lapsed|none filters by membership status.
+    ?search=text matches name or email, ignoring case.
+    """
+
+    permission_classes = [has_role('president', 'treasurer', 'event_manager')]
+    serializer_class = MemberSerializer
+
+    def get_queryset(self):
+        today = timezone.localdate()
+        users = services.with_membership_status(get_user_model().objects.all(), today).prefetch_related(
+            Prefetch(
+                'role_assignments',
+                queryset=RoleAssignment.objects.filter(term_start__lte=today, term_end__gte=today),
+                to_attr='current_assignments',
+            )
+        ).order_by('name', 'id')
+
+        params = self.request.query_params
+        wanted = params.get('status')
+        if wanted:
+            if wanted not in ('active', 'lapsed', 'none'):
+                raise ValidationError(
+                    {'status': [ErrorDetail('Use active, lapsed or none.', code='invalid_choice')]}
+                )
+            users = users.filter(membership_status=wanted)
+        search = params.get('search', '').strip()
+        if search:
+            users = users.filter(Q(name__icontains=search) | Q(email__icontains=search))
+        return users

@@ -196,14 +196,18 @@ def _source(entry):
              'unit_price': line.unit_price, 'discount': line.discount, 'paid': line.amount}
             for line in order.lines.filter(kind='merch').select_related('product_size__product')
         ]
-        return {**base, 'label': f'{order.buyer.name} ordered merchandise', 'details': {'buyer': order.buyer.name, 'items': items}}
+        return {**base, 'label': f'{order.buyer.name} ordered merchandise', 'details': {
+            'order': order.pk, 'buyer': order.buyer.name, 'items': items,
+        }}
     if kind == 'expense_request':
         expense = ExpenseRequest.objects.select_related('requester').get(pk=source_id)
         approval = getattr(expense, 'approval', None)
         return {**base, 'label': f'{expense.requester.name}: {expense.description}', 'details': {
             'requester': expense.requester.name, 'amount': expense.amount, 'status': expense.status,
             'receipt_url': expense.receipt_file.url,
-            'approved_by': approval.approver.name if approval else None,
+            'description': expense.description,
+            # Only an approval names an approver; a rejection does not.
+            'approved_by': approval.approver.name if approval and approval.decision == 'approved' else None,
         }}
     if kind == 'fundraiser_sale':
         sale = FundraiserSale.objects.select_related('fundraiser', 'recorded_by').get(pk=source_id)
