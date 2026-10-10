@@ -50,6 +50,24 @@ docker compose stop                # stop the database, keep its data
 After pulling new code, run `pip install -r requirements.txt` and
 `python manage.py migrate` again.
 
+## Demo data
+
+```bash
+python manage.py seed_demo            # on an empty database
+python manage.py seed_demo --reset    # wipe everything and rebuild (about 3 seconds)
+```
+
+Builds the Skyline Student Association: one user per role plus a second
+approver, 40 members (4 lapsed, 4 expiring soon), Basic and Plus plans, a past
+event with sales and check-ins, the Spring Gala with 12 General seats left,
+and a small meetup. Memberships and tickets are bought through the real
+purchase code, so every rupee has an order, a payment and a ledger entry.
+The logins are printed at the end. Priya is deliberately absent: sign her up
+live.
+
+`--reset` deletes **all** users, orders, tickets, ledger and audit rows. It
+only runs when `DJANGO_DEBUG=true`.
+
 ## Admin: roles and plans
 
 Until the roles endpoint and the seed script exist, roles are assigned and

@@ -1,6 +1,9 @@
+from unittest import mock
+
 from django.test import override_settings
 from django.urls import path
 from rest_framework.permissions import AllowAny
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from common.testing import PASSWORD, ApiTestCase
@@ -74,6 +77,16 @@ class UnhandledErrorTests(ApiTestCase):
 
 
 class ThrottleTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        # Pin the rates: they are configurable through the environment, and
+        # these tests must not depend on a developer's .env.
+        patcher = mock.patch.object(
+            SimpleRateThrottle, 'THROTTLE_RATES', {'login': '20/min', 'signup': '10/min'},
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_login_is_throttled_after_20_attempts_a_minute(self):
         self.make_user()
         body = {'email': 'priya@example.com', 'password': 'wrong-password'}

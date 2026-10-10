@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import has_role
+from finance import reports
 from members.services import membership_status
 from shop.api import IdempotencyKeyReused, PaymentFailed, idempotency_key
 from shop.models import Order
@@ -24,6 +25,8 @@ from .serializers import (
 # Plan permission table: "Create events and tiers" and "Check people in" are
 # president and event manager only.
 EventStaff = has_role('president', 'event_manager')
+# Plan API table: attendance and P&L are for EM, P and T.
+EventReportReaders = has_role('president', 'event_manager', 'treasurer')
 
 
 class SoldOutError(APIException):
@@ -206,4 +209,32 @@ class CheckInView(APIView):
             'membership_status': scan.membership_status,
             'checked_in_at': checkin and checkin.scanned_at,
             'checked_in_by': checkin and checkin.scanned_by.name,
+        })
+
+
+class EventAttendanceView(APIView):
+    """GET /events/{id}/attendance. Plan: "Sold, checked in, no-shows"."""
+
+    permission_classes = [EventReportReaders]
+
+    def get(self, request, pk):
+        event = get_object_or_404(Event.objects.prefetch_related('tiers'), pk=pk)
+        return Response({'event': {'id': event.id, 'title': event.title, 'status': event.status},
+                         **reports.event_attendance(event)})
+
+
+class EventPnlView(APIView):
+    """GET /events/{id}/pnl. Plan: "Revenue, expenses, profit, budget vs
+    actual", plus the attendance rate.
+    """
+
+    permission_classes = [EventReportReaders]
+
+    def get(self, request, pk):
+        event = get_object_or_404(Event.objects.prefetch_related('tiers'), pk=pk)
+        attendance = reports.event_attendance(event)
+        return Response({
+            'event': {'id': event.id, 'title': event.title, 'status': event.status},
+            **reports.event_pnl(event),
+            'attendance': {key: attendance[key] for key in ('sold', 'checked_in', 'attendance_rate_pct')},
         })
