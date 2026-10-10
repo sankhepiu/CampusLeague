@@ -558,3 +558,55 @@ Show "Active member" only when `membership_status` is `active`; `lapsed` and
 
 Errors: `400 validation_error` (neither or both of `token` and `code`),
 `401`, `403 permission_denied`.
+
+## GET /events/{id}/attendance
+
+Sold, checked in, no-shows. Requirement: R10.
+
+- **Who:** President, event manager or treasurer.
+- **Database:** read only.
+
+```json
+{
+  "event": { "id": 1, "title": "Freshers Night", "status": "closed" },
+  "capacity_total": 60,
+  "sold": 35,
+  "checked_in": 30,
+  "no_shows": 5,
+  "attendance_rate_pct": 85.7,
+  "tiers": [
+    { "id": 1, "name": "General", "capacity": 60, "sold": 35, "checked_in": 30, "no_shows": 5 }
+  ]
+}
+```
+
+- `sold` excludes cancelled tickets.
+- **Assumption:** `no_shows` is `sold - checked_in`; it only means "did not
+  come" once the event is over.
+- `attendance_rate_pct` is `null` when nothing has been sold.
+
+Errors: `401`, `403 permission_denied`, `404 not_found`.
+
+## GET /events/{id}/pnl
+
+Event revenue minus expenses, budget vs actual. Requirement: R10.
+
+- **Who:** President, event manager or treasurer.
+- **Database:** read only. Every figure is summed from ledger lines tagged
+  with this event; nothing is stored. Amounts are paise.
+
+```json
+{
+  "event": { "id": 1, "title": "Freshers Night", "status": "closed" },
+  "revenue": { "total": 740000, "by_account": [ { "code": "4100", "name": "Ticket revenue", "amount": 740000 } ] },
+  "expenses": { "total": 0, "by_account": [] },
+  "profit": 740000,
+  "budget": { "amount": 1200000, "spent": 0, "remaining": 1200000 },
+  "attendance": { "sold": 35, "checked_in": 30, "attendance_rate_pct": 85.7 }
+}
+```
+
+- `profit` and `budget.remaining` can be negative.
+- `expenses` stays empty until reimbursements (Phase 4) post to the ledger.
+
+Errors: `401`, `403 permission_denied`, `404 not_found`.
