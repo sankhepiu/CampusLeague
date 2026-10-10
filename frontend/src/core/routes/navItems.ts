@@ -19,6 +19,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'members', path: '/members', label: 'Members', icon: 'badge' },
   { key: 'checkin', path: '/checkin', label: 'Check-in', icon: 'badge' },
   { key: 'expenses', path: '/expenses', label: 'Expenses', icon: 'coin' },
+  { key: 'expenseApproval', path: '/expenses/approvals', label: 'Approvals', icon: 'coin' },
   { key: 'finance', path: '/finance', label: 'Finance', icon: 'coin' },
   { key: 'insights', path: '/insights', label: 'Insights', icon: 'trophy' },
   { key: 'admin', path: '/admin', label: 'Admin', icon: 'badge' },

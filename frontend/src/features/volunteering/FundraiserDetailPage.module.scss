@@ -1,0 +1,131 @@
+@use '../../styles/mixins';
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.meta {
+  color: var(--cl-color-text-muted);
+  margin: 0 0 1.5rem;
+}
+
+.editLink {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.goalPanel {
+  margin-bottom: 1.5rem;
+}
+
+.addTaskButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.6rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 42rem) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.columnTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  margin: 0 0 0.75rem;
+  color: var(--cl-color-text-muted);
+}
+
+.taskCard {
+  margin-bottom: 0.75rem;
+}
+
+.taskTitle {
+  font-size: 0.95rem;
+  margin: 0 0 0.4rem;
+}
+
+.taskDue {
+  color: var(--cl-color-text-muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+}
+
+.assigneeList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.6rem;
+}
+
+.assigneeRow {
+  font-size: 0.8rem;
+  color: var(--cl-color-text-muted);
+}
+
+.statusRow {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.statusButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.55rem;
+  padding: 0.4rem 0.5rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.statusButtonActive {
+  border-color: var(--cl-color-primary);
+  color: var(--cl-color-primary);
+}
+
+.assignForm {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.assignToggle {
+  @include mixins.focus-ring;
+  font-size: 0.75rem;
+  color: var(--cl-color-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 0.4rem;
+}

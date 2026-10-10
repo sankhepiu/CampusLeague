@@ -44,16 +44,22 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const token = session.getToken();
 
+  // Receipt uploads (POST /expenses) are the one endpoint that isn't JSON.
+  // For FormData we must NOT set Content-Type ourselves — the browser needs
+  // to add the multipart boundary, which it only does when it picks the
+  // header itself. Setting it manually breaks the upload.
+  const isFormData = options.body instanceof FormData;
+
   try {
     const response = await fetch(buildUrl(path, options.query), {
       method: options.method ?? 'GET',
       headers: {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         // Django REST's TokenAuthentication expects "Token <key>", not "Bearer".
         ...(token ? { Authorization: `Token ${token}` } : {}),
         ...options.headers,
       },
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: isFormData ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: options.signal ?? controller.signal,
     });
 
