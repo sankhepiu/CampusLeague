@@ -172,6 +172,54 @@ class TraceTests(FinanceTestCase):
         for entry in expense_entries:
             self.assertGreaterEqual(set(entry['source']['details']), {'description', 'approved_by'})
 
+    def test_profit_trace_shows_both_sides_of_every_entry(self):
+        body = self.trace(f'event:{self.event.id}:profit')
+
+        self.assertGreater(len(body['entries']), 0)
+        for entry in body['entries']:
+            with self.subTest(entry=entry['description']):
+                lines = entry['lines']
+                # The whole entry is shown, so it balances like any entry.
+                self.assertEqual(sum(line['debit'] for line in lines), sum(line['credit'] for line in lines))
+                self.assertGreaterEqual(len(lines), 2)
+                self.assertTrue(all(isinstance(line['counted'], bool) for line in lines))
+                # At least one line is there only for display...
+                self.assertTrue(any(not line['counted'] for line in lines))
+                # ...and the entry's amount comes from the counted ones alone.
+                counted = [line for line in lines if line['counted']]
+                self.assertTrue(counted)
+                self.assertEqual(abs(entry['amount']), sum(line['debit'] + line['credit'] for line in counted))
+        self.assertEqual(sum(entry['amount'] for entry in body['entries']), body['total'])
+        self.assertEqual(body['total'], 120000 - 90000)        # unchanged by showing more lines
+
+    def test_counted_marks_exactly_the_figures_accounts(self):
+        ticket = next(e for e in self.trace(f'event:{self.event.id}:profit')['entries'] if e['kind'] == 'ticket_sale')
+        self.assertEqual(
+            sorted((line['account']['code'], line['debit'], line['credit'], line['counted']) for line in ticket['lines']),
+            [('1000', 120000, 0, False), ('4100', 0, 120000, True)],
+        )
+        approved = next(e for e in self.trace(f'event:{self.event.id}:profit')['entries'] if e['kind'] == 'expense_approved')
+        self.assertEqual({line['account']['code']: line['counted'] for line in approved['lines']}, {'5000': True, '2000': False})
+
+        # The same merch entry seen from two figures: what counts depends on the figure.
+        as_revenue = self.trace('account:4200')['entries'][0]
+        as_cash = next(e for e in self.trace('cash')['entries'] if e['kind'] == 'merch_sale')
+        self.assertEqual(as_revenue['id'], as_cash['id'])
+        self.assertEqual({line['account']['code']: line['counted'] for line in as_revenue['lines']}, {'1000': False, '4200': True})
+        self.assertEqual({line['account']['code']: line['counted'] for line in as_cash['lines']}, {'1000': True, '4200': False})
+        self.assertEqual((as_revenue['amount'], as_cash['amount']), (108000, 108000))
+
+    def test_every_figure_returns_whole_balanced_entries(self):
+        figures = ['came_in', 'went_out', 'cash', 'payable', 'account:4000', 'account:2000',
+                   f'event:{self.event.id}:revenue', f'event:{self.event.id}:expenses']
+        for figure in figures:
+            body = self.trace(figure)
+            for entry in body['entries']:
+                with self.subTest(figure=figure, entry=entry['id']):
+                    self.assertEqual(sum(l['debit'] for l in entry['lines']), sum(l['credit'] for l in entry['lines']))
+                    self.assertTrue(any(l['counted'] for l in entry['lines']))
+            self.assertEqual(sum(entry['amount'] for entry in body['entries']), body['total'])
+
     def test_event_revenue_and_expenses_separately(self):
         self.assertEqual(self.trace(f'event:{self.event.id}:revenue')['total'], 120000)
         self.assertEqual(self.trace(f'event:{self.event.id}:expenses')['total'], 90000)

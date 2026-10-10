@@ -269,16 +269,25 @@ def trace(figure, limit=200):
         # In a profit figure, expenses count against it.
         return -amount if profit and line.account.type == EXPENSE else amount
 
-    lines = list(lines.select_related('account', 'entry').order_by('-entry__posted_at', '-entry_id', 'id'))
+    # Step 1: the amounts. Only the lines on the figure's accounts count
+    # towards each entry's amount and the total.
+    counted_lines = list(lines.select_related('account', 'entry').order_by('-entry__posted_at', '-entry_id', 'id'))
     entries = {}
-    for line in lines:
+    for line in counted_lines:
         node = entries.setdefault(line.entry_id, {'entry': line.entry, 'amount': 0, 'lines': []})
         node['amount'] += contribution(line)
-        node['lines'].append({
-            'id': line.id, 'account': {'code': line.account.code, 'name': line.account.name},
-            'debit': line.debit, 'credit': line.credit,
-        })
     nodes = list(entries.values())
+
+    # Step 2: the display. Every line of each returned entry is shown, so the
+    # reader sees both sides of it (a sale's revenue credit AND its cash
+    # debit); "counted" marks the lines that made up the amount in step 1.
+    counted_ids = {line.id for line in counted_lines}
+    shown = {node['entry'].id: node for node in nodes[:limit]}
+    for line in LedgerLine.objects.filter(entry_id__in=shown).select_related('account').order_by('id'):
+        shown[line.entry_id]['lines'].append({
+            'id': line.id, 'account': {'code': line.account.code, 'name': line.account.name},
+            'debit': line.debit, 'credit': line.credit, 'counted': line.id in counted_ids,
+        })
     return {
         'figure': figure,
         'label': label,

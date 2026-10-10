@@ -40,6 +40,8 @@ from comms.models import Announcement, AnnouncementDelivery
 from events import tickets
 from events.models import CheckIn, Event, Ticket, TicketTier
 from finance import expenses
+from insights import savefiles
+from insights.models import SaveFile
 from finance.models import Approval, ExpenseRequest, LedgerEntry, LedgerLine
 from members.models import Membership, MembershipPlan
 from members.services import add_months
@@ -59,7 +61,7 @@ DOMAIN = 'skyline.test'
 # Wiped by reset. finance.LedgerAccount is deliberately absent: the chart of
 # accounts is reference data created by a migration.
 RESET_MODELS = [
-    AuditLog, AnnouncementDelivery, Announcement, Approval, ExpenseRequest, FundraiserSale,
+    AuditLog, SaveFile, AnnouncementDelivery, Announcement, Approval, ExpenseRequest, FundraiserSale,
     TaskAssignment, Task, Fundraiser, CheckIn, Ticket, LedgerLine, LedgerEntry,
     StockMovement, Payment, OrderLine, Order, ProductSize, Product,
     TicketTier, Event, Membership, MembershipPlan, RoleAssignment, User,
@@ -322,6 +324,16 @@ def seed():
     expenses.reject(expense(members[9], 4500, 'Printer ink', 'general').pk, treasurer, 'Not agreed beforehand')
     # Left as submitted: approve it live as the treasurer.
     expense(members[4], 35000, 'Stage flowers', event=gala)
+
+    # Save File: what this committee learned from the past event ----------
+    savefiles.save(
+        event=freshers, actor=leaders['events'],
+        vendors='Sound: Beatbox Audio (reliable, book 3 weeks ahead). Snacks: Campus Canteen.',
+        budget_notes='Sound hire was the biggest cost. Decorations came in under budget.',
+        what_worked='Member pricing drove sign-ups in the week before. QR check-in kept the queue short.',
+        what_didnt='Five no-shows. Snacks ran out by 9 pm; order 20% more next time.',
+        checklist=['Book venue', 'Confirm sound vendor', 'Open ticket sales', 'Brief door volunteers', 'Order snacks'],
+    )
 
     return {
         'admin': admin, 'leaders': leaders, 'members': members,

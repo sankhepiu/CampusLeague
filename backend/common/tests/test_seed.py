@@ -16,6 +16,8 @@ from events.models import CheckIn, Event, Ticket, TicketTier
 from finance import reports
 from finance.models import ExpenseRequest, LedgerAccount, LedgerEntry, LedgerLine
 from finance.tests.helpers import TempMediaMixin
+from insights import health, simulator
+from insights.models import SaveFile
 from finance.services import account_balance
 from members.models import Membership
 from members.services import membership_status
@@ -165,6 +167,57 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         self.assertEqual(len(after), 7)
         self.assertEqual(before & after, set())
 
+    def test_past_event_has_a_save_file(self):
+        save_file = SaveFile.objects.get()
+        self.assertEqual(save_file.event.title, 'Freshers Night')
+        self.assertTrue(save_file.vendors and save_file.what_worked and save_file.what_didnt)
+        self.assertEqual(len(save_file.checklist), 5)
+        self.assertEqual(AuditLog.objects.filter(action='savefile.created').count(), 1)
+
+    def test_simulator_shows_forecast_vs_actual_for_the_past_event(self):
+        # Forecast made before Freshers Night: 40 guests at Rs 250, Rs 2,000
+        # fixed costs, Rs 50 a head.
+        freshers = Event.objects.get(title='Freshers Night')
+        forecast = simulator.simulate(
+            ticket_price=25000, expected_attendance=40, fixed_costs=200000, variable_cost_per_head=5000,
+        )
+        self.assertEqual(forecast['break_even_attendance'], 10)
+        self.assertEqual((forecast['revenue'], forecast['costs'], forecast['profit']), (1000000, 400000, 600000))
+
+        comparison = simulator.forecast_vs_actual(freshers, forecast, 40)
+
+        # Actual, from the seed: 35 sold (31 members at Rs 200, 4 at Rs 300),
+        # 30 checked in, expenses of Rs 2,500 + Rs 800 + Rs 1,200.
+        self.assertEqual(comparison['actual'], {
+            'attendance': 30, 'tickets_sold': 35, 'revenue': 740000, 'costs': 450000, 'profit': 290000,
+        })
+        self.assertEqual(comparison['forecast'], {'attendance': 40, 'revenue': 1000000, 'costs': 400000, 'profit': 600000})
+        self.assertEqual(comparison['difference'], {'attendance': -10, 'revenue': -260000, 'costs': 50000, 'profit': -310000})
+        # The upcoming gala has no "actual" yet.
+        self.assertIsNone(simulator.forecast_vs_actual(Event.objects.get(title='Spring Gala'), forecast, 40))
+
+    def test_club_health_explains_itself_on_the_demo_data(self):
+        result = health.club_health()
+        components = {component['key']: component for component in result['components']}
+        # 36 of 40 active (90%); 0 of 4 lapsed renewed: (70*90 + 30*0) / 100 = 63.
+        self.assertEqual(components['membership']['score'], 63)
+        self.assertIn('36 of 40', components['membership']['reason'])
+        self.assertIn('0 of 4', components['membership']['reason'])
+        # 30 of 35 checked in = 85.7 -> 86.
+        self.assertEqual(components['attendance']['score'], 86)
+        # 1 of 4 tasks done.
+        self.assertEqual(components['volunteering']['score'], 25)
+        # Cash in: dues 2,400,000 + tickets 2,820,000 + merch 1,148,000 +
+        # bake sale 740,000 = 7,108,000 paise. Cash out: payouts of 250,000 +
+        # 80,000 + 500,000 = 830,000. 7,108,000 / 7,938,000 = 89.5 -> 90.
+        self.assertEqual(components['money']['score'], 90)
+        self.assertIn('Rs 71,080.00 came in and Rs 8,300.00 went out', components['money']['reason'])
+        # (63*30 + 86*25 + 25*20 + 90*25) / 100 = 67.9 -> 68.
+        self.assertEqual(result['score'], 68)
+        self.assertEqual(
+            round(sum(component['contribution'] for component in result['components'])), result['score'],
+        )
+
     def test_refuses_to_seed_twice_without_reset(self):
         before = snapshot()
         with self.assertRaises(CommandError):
@@ -183,7 +236,8 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         # are the ones the seed itself writes.
         self.assertFalse(AuditLog.objects.filter(action='test.marker').exists())
         self.assertEqual(AuditLog.objects.filter(action='stock.restocked').count(), 8)
-        self.assertEqual(AuditLog.objects.count(), 8 + 9)      # plus 5 approvals, 3 payouts, 1 rejection
+        # ...plus 5 approvals, 3 payouts, 1 rejection and 1 save file.
+        self.assertEqual(AuditLog.objects.count(), 8 + 9 + 1)
         self.assertEqual(LedgerAccount.objects.count(), 9)     # chart of accounts kept
         self.assertEqual(Event.objects.order_by('id').first().id, 1)   # ids restart
 

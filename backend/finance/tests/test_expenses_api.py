@@ -61,7 +61,9 @@ class SubmitTests(ExpenseTestCase):
         self.assertEqual(body['status'], 'submitted')
         self.assertEqual(body['requester'], {'id': self.volunteer.id, 'name': 'Priya'})
         self.assertIsNone(body['approval'])
-        self.assertIn('/media/receipts/', body['receipt_url'])
+        # Relative, so the frontend's /media proxy serves it.
+        self.assertTrue(body['receipt_url'].startswith('/media/receipts/'), body['receipt_url'])
+        self.assertNotIn('://', body['receipt_url'])
         self.assertTrue(os.path.exists(os.path.join(settings.MEDIA_ROOT, expense.receipt_file.name)))
         # Submitting moves no money.
         self.assertEqual(LedgerEntry.objects.count(), 0)
@@ -288,6 +290,23 @@ class ExpenseListTests(ExpenseTestCase):
         self.login_as(self.volunteer)
         body = self.client.get(f'{EXPENSES}/me').json()
         self.assertEqual([item['id'] for item in body['results']], [self.mine.id])
+
+    def test_receipt_url_is_relative_in_every_expense_endpoint(self):
+        self.login_as(self.volunteer)
+        mine = self.client.get(f'{EXPENSES}/me').json()['results']
+        self.login_as(self.treasurer)
+        queue = self.client.get(EXPENSES).json()['results']
+        decided = self.act(self.mine, 'approve', self.treasurer).json()
+        urls = [item['receipt_url'] for item in mine + queue] + [decided['receipt_url']]
+        self.assertEqual(len(urls), 4)
+        for url in urls:
+            self.assertTrue(url.startswith('/media/'), url)
+
+    def test_expense_and_trace_give_the_same_receipt_url(self):
+        decided = self.act(self.mine, 'approve', self.treasurer).json()
+        trace = self.client.get('/api/finance/trace', {'figure': 'payable'}).json()
+        traced = {e['source']['id']: e['source']['details']['receipt_url'] for e in trace['entries']}
+        self.assertEqual(traced[self.mine.id], decided['receipt_url'])
 
     def test_queue_is_for_president_and_treasurer_and_can_be_filtered(self):
         self.login_as(self.treasurer)
