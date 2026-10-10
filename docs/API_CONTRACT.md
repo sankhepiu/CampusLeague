@@ -847,7 +847,7 @@ Response `200`: a paginated list of
 | `category` | string | **Assumption:** `event`, `fundraiser` or `general`, one per expense account (5000, 5100, 5200). |
 | `event`, `fundraiser` | integer or `null` | `event` category needs `event`; `fundraiser` needs `fundraiser`; `general` takes neither. |
 | `description` | string | Max 500. |
-| `receipt_url` | string | Absolute URL of the uploaded receipt. |
+| `receipt_url` | string | Path of the uploaded receipt, relative to the site root: `/media/receipts/<name>`. The same form in every expense endpoint and in the trace, so it can be loaded through the frontend's `/media` proxy. |
 | `status` | string | `submitted`, `approved`, `rejected` or `paid`. |
 | `created_at` | timestamp | |
 | `approval` | object or `null` | `{ "decision", "reason", "decided_at", "approver": { "id", "name" } }` once decided. |
@@ -988,7 +988,10 @@ record behind each entry.
     {
       "id": 44, "posted_at": "...", "description": "Tickets: Freshers Night / General x1", "kind": "ticket_sale",
       "amount": 30000,
-      "lines": [ { "id": 88, "account": { "code": "4100", "name": "Ticket revenue" }, "debit": 0, "credit": 30000 } ],
+      "lines": [
+        { "id": 87, "account": { "code": "1000", "name": "Cash and bank" }, "debit": 30000, "credit": 0, "counted": false },
+        { "id": 88, "account": { "code": "4100", "name": "Ticket revenue" }, "debit": 0, "credit": 30000, "counted": true }
+      ],
       "source": {
         "type": "order_line", "id": 44, "label": "Amrita Pillai bought 1 x General for Freshers Night",
         "details": { "order": 44, "buyer": "Amrita Pillai",
@@ -1001,6 +1004,12 @@ record behind each entry.
 
 - `total` equals the sum of every entry's `amount`. In a profit figure,
   expense entries have negative amounts.
+- `lines` is **every** line of the entry, so its debits always equal its
+  credits. `counted` is `true` for the lines on the figure's own accounts,
+  the ones that make up `amount`, and `false` for the other side of the
+  entry, shown for context. The same entry has different `counted` flags
+  under different figures (a merch sale counts its 4200 line under
+  `account:4200` and its 1000 line under `cash`).
 - `entries` is newest first and capped at 200; `entry_count` is the full count.
 - `source` is `{ "type", "id", "label", "details" }`. `details` by `type`:
 
@@ -1043,3 +1052,167 @@ Requirements: R15, R16.
 | `POST /tasks`, `PATCH /tasks/{id}` | President, volunteer coordinator | `fundraiser` or `event`, `title`, `description`, `due_date`. Status is not editable here. |
 | `POST /tasks/{id}/assign` | President, volunteer coordinator | `{ "user", "role_note" }`. Assigning the same person again updates the note. |
 | `PATCH /tasks/{id}/status` | An assignee of that task, president, volunteer coordinator | `{ "status" }`. Anyone else: `403 permission_denied`. |
+
+---
+
+## POST /simulator
+
+Break-even Bench. A calculation only: nothing is saved and the ledger is not
+touched.
+
+- **Who:** Event manager, treasurer or president.
+
+Request (all amounts in paise, all whole numbers of 0 or more):
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `ticket_price` | integer | yes | Must be greater than `variable_cost_per_head`. |
+| `expected_attendance` | integer | yes | **Assumption:** at most 1,000,000. |
+| `fixed_costs` | integer | yes | Costs that do not depend on attendance. |
+| `variable_cost_per_head` | integer | yes | Cost of one more guest. |
+| `event` | integer | no | An event id. If that event has ended, the response adds forecast vs actual. |
+
+**Assumption:** money fields are capped at 10^11 paise.
+
+```json
+{ "ticket_price": 50000, "expected_attendance": 60, "fixed_costs": 1000000, "variable_cost_per_head": 10000 }
+```
+
+Response `200`:
+
+```json
+{
+  "inputs": { "ticket_price": 50000, "expected_attendance": 60, "fixed_costs": 1000000, "variable_cost_per_head": 10000 },
+  "margin_per_head": 40000,
+  "break_even_attendance": 25,
+  "revenue": 3000000,
+  "costs": 1600000,
+  "profit": 1400000,
+  "breaks_even": true,
+  "event": null,
+  "forecast_vs_actual": null
+}
+```
+
+- `break_even_attendance` is `fixed_costs / (ticket_price - variable_cost_per_head)`,
+  rounded **up** to a whole person.
+- `revenue`, `costs` and `profit` are at `expected_attendance`. `profit` can
+  be negative.
+- `breaks_even` is whether `expected_attendance` reaches the break-even point.
+
+With `event` set and the event already over, `forecast_vs_actual` is filled
+from the ledger and the door (the same figures as `GET /events/{id}/pnl`):
+
+```json
+{
+  "event": { "id": 1, "title": "Freshers Night" },
+  "forecast_vs_actual": {
+    "forecast": { "attendance": 40, "revenue": 1000000, "costs": 400000, "profit": 600000 },
+    "actual": { "attendance": 30, "tickets_sold": 35, "revenue": 740000, "costs": 450000, "profit": 290000 },
+    "difference": { "attendance": -10, "revenue": -260000, "costs": 50000, "profit": -310000 }
+  }
+}
+```
+
+- `difference` is actual minus forecast.
+- **Assumption:** `actual.attendance` is people checked in; `tickets_sold` is
+  given beside it because revenue follows sales.
+- For an event that has not ended, `forecast_vs_actual` is `null`.
+
+Errors:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `validation_error` | A field is missing, negative, not a whole number or too large; `event` does not exist. |
+| 400 | `validation_error` on `ticket_price`, item code `no_break_even` | The price is not higher than the cost per head, so no attendance can break even. |
+| 401, 403 | | Not logged in; not one of the three roles. |
+
+## GET /health
+
+Club Health: a 0 to 100 score that explains itself. (Not a server uptime
+check.)
+
+- **Who:** President only.
+- **Database:** read only; everything is counted when asked.
+
+```json
+{
+  "score": 68,
+  "components": [
+    { "key": "membership", "label": "Membership", "score": 63, "weight": 30, "contribution": 18.9,
+      "reason": "36 of 40 people who joined are active members (90%); 0 of 4 whose membership ran out have renewed (0%)." },
+    { "key": "attendance", "label": "Event attendance", "score": 86, "weight": 25, "contribution": 21.5,
+      "reason": "30 of 35 tickets were checked in across 1 closed event(s)." },
+    { "key": "volunteering", "label": "Volunteering", "score": 25, "weight": 20, "contribution": 5.0,
+      "reason": "1 of 4 tasks are done." },
+    { "key": "money", "label": "Money", "score": 90, "weight": 25, "contribution": 22.5,
+      "reason": "In the last 30 days Rs 71,080.00 came in and Rs 8,300.00 went out; cash is now Rs 62,780.00." }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `score` | Weighted average of the component scores, 0 to 100; `null` for a club with nothing to measure yet. |
+| `components[].score` | 0 to 100, or `null` when there is no data for it. |
+| `components[].weight` | Its share of the overall score. The four weights sum to 100. |
+| `components[].contribution` | Points it adds to `score`. The contributions sum to `score` (before rounding). |
+| `components[].reason` | One sentence with the real counts behind the score. |
+
+How each component is scored. The plan names the four components; **every
+formula and weight below is an Assumption**, defined in one place
+(`backend/insights/health.py`):
+
+| Component | Weight | Score |
+|---|---|---|
+| Membership | 30 | 70% active share (people with a current membership, out of everyone who has ever joined) + 30% renewal rate (people who renewed, out of those whose membership ran out). If no membership has run out yet, the active share alone. |
+| Attendance | 25 | Tickets checked in, out of tickets sold, across events with status `closed`. |
+| Volunteering | 20 | Tasks done, out of all tasks. |
+| Money | 25 | Of the cash that moved in the last 30 days, the share that was coming in. 50 means in equals out. |
+
+A component with no data has `score: null` and is left out of the average, so
+the remaining weights are scaled up.
+
+Errors: `401`, `403 permission_denied`.
+
+## GET /savefiles, POST /savefiles
+
+Save Files: handover notes per event.
+
+- **Who:** Event manager or president, for both reading and writing.
+
+Save file object:
+
+```json
+{
+  "id": 1,
+  "event": { "id": 1, "title": "Freshers Night" },
+  "vendors": "Sound: Beatbox Audio (reliable, book 3 weeks ahead).",
+  "budget_notes": "Sound hire was the biggest cost.",
+  "what_worked": "QR check-in kept the queue short.",
+  "what_didnt": "Snacks ran out by 9 pm; order 20% more next time.",
+  "checklist": ["Book venue", "Confirm sound vendor", "Open ticket sales"],
+  "updated_at": "2026-10-10T18:30:00+05:30"
+}
+```
+
+`GET /savefiles` returns a paginated list, most recently updated first.
+`?event=<id>` returns that event's save file (zero or one result).
+
+`POST /savefiles`:
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `event` | integer | yes | An existing event. |
+| `vendors`, `budget_notes`, `what_worked`, `what_didnt` | string | no | **Assumption:** at most 5000 characters each. |
+| `checklist` | string[] | no | **Assumption:** a list of text items, at most 50, each at most 200 characters. |
+
+- There is one save file per event. **Assumption** (the plan gives only GET
+  and POST, and says save files are editable): POST for an event with no
+  save file creates it (`201`); POST for an event that has one updates it
+  (`200`).
+- On update, only the fields sent are changed; send `""` or `[]` to clear one.
+- Every create and every change writes an audit-log row (`savefile.created`,
+  `savefile.updated` with the before and after of the changed fields).
+
+Errors: `400 validation_error`, `401`, `403 permission_denied`.
