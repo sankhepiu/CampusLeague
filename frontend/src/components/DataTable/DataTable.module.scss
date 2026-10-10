@@ -30,6 +30,20 @@
   background: var(--cl-color-bg-raised);
 }
 
+// Keeps the first column in view while a wide table scrolls horizontally
+// on phones, per the "first column visible" rule.
+.sticky {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--cl-color-panel);
+}
+
+.table th.sticky {
+  background: var(--cl-color-bg-raised);
+  z-index: 2;
+}
+
 .table tbody tr:last-child td {
   border-bottom: none;
 }

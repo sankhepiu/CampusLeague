@@ -13,18 +13,22 @@ interface PnlData {
   expenses: { total: number; byAccount: PnlAccountLine[] };
   profit: number;
   budget: { amount: number; spent: number; remaining: number };
+  attendance?: { sold: number; checkedIn: number; attendanceRatePct: number | null };
 }
 
 interface PnlCardProps {
   title?: string;
   data: PnlData;
   accent?: string;
+  /** When given, the profit figure becomes a button that opens the Coin
+   * Trail for it (finance screens only — EventDetailPage leaves this unset). */
+  onProfitClick?: () => void;
 }
 
 /** Revenue/expenses/profit/budget summary. Feature-agnostic by design (takes
  * a plain data shape, not an events-specific type) so finance screens can
  * reuse it for any P&L-shaped figures. */
-export function PnlCard({ title = 'Profit & Loss', data, accent }: PnlCardProps) {
+export function PnlCard({ title = 'Profit & Loss', data, accent, onProfitClick }: PnlCardProps) {
   return (
     <Panel accent={accent}>
       <h3 className={styles.title}>{title}</h3>
@@ -44,9 +48,15 @@ export function PnlCard({ title = 'Profit & Loss', data, accent }: PnlCardProps)
         </div>
         <div className={styles.stat}>
           <span className={styles.statLabel}>Profit</span>
-          <span className={`${styles.statValue} ${data.profit >= 0 ? styles.positive : styles.negative}`}>
-            <Money paise={data.profit} />
-          </span>
+          {onProfitClick ? (
+            <button type="button" className={`${styles.statValue} ${styles.profitButton} ${data.profit >= 0 ? styles.positive : styles.negative}`} onClick={onProfitClick}>
+              <Money paise={data.profit} />
+            </button>
+          ) : (
+            <span className={`${styles.statValue} ${data.profit >= 0 ? styles.positive : styles.negative}`}>
+              <Money paise={data.profit} />
+            </span>
+          )}
         </div>
       </div>
 
@@ -99,6 +109,18 @@ export function PnlCard({ title = 'Profit & Loss', data, accent }: PnlCardProps)
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {data.attendance && (
+        <div className={styles.section}>
+          <p className={styles.sectionLabel}>Attendance</p>
+          <p className={styles.accountRow} style={{ borderBottom: 'none' }}>
+            <span>
+              {data.attendance.checkedIn} checked in of {data.attendance.sold} sold
+            </span>
+            {data.attendance.attendanceRatePct !== null && <span>{data.attendance.attendanceRatePct}%</span>}
+          </p>
         </div>
       )}
     </Panel>

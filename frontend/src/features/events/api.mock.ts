@@ -1,4 +1,5 @@
 import { ApiRequestError, type Paginated } from '../../api/client';
+import { computeEventExpenses } from '../finance/financeLedgerEngine';
 import { countsForMockEvent, revenueForMockEvent } from '../tickets/mockTicketsStore';
 import {
   addMockTier,
@@ -80,11 +81,11 @@ export const mockEventsApi = {
     if (!event) throw new ApiRequestError({ code: 'not_found', message: 'No such event.' });
     const counts = countsForMockEvent(eventId);
     const revenueTotal = revenueForMockEvent(eventId);
-    const spent = 0; // expenses (Phase 4 reimbursements) aren't posted yet, matching the contract note
+    const { total: spent, byAccount: expensesByAccount } = computeEventExpenses(eventId);
     return {
       event: { id: event.id, title: event.title, status: event.status },
       revenue: { total: revenueTotal, byAccount: revenueTotal > 0 ? [{ code: '4100', name: 'Ticket revenue', amount: revenueTotal }] : [] },
-      expenses: { total: 0, byAccount: [] },
+      expenses: { total: spent, byAccount: expensesByAccount },
       profit: revenueTotal - spent,
       budget: { amount: event.budgetAmount, spent, remaining: event.budgetAmount - spent },
       attendance: {

@@ -1,0 +1,69 @@
+@use '../../styles/mixins';
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.badge {
+  @include mixins.pixel-border;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.8rem;
+}
+
+.ok {
+  background: color-mix(in srgb, var(--cl-color-success) 20%, transparent);
+  color: var(--cl-color-success);
+  border-color: var(--cl-color-success);
+}
+
+.failing {
+  background: color-mix(in srgb, var(--cl-color-danger) 20%, transparent);
+  color: var(--cl-color-danger);
+  border-color: var(--cl-color-danger);
+}
+
+.refreshButton,
+.toggleButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.55rem;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.checksList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.checkRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--cl-color-bg-raised);
+  font-size: 0.85rem;
+}
+
+.checkFailing {
+  color: var(--cl-color-danger);
+}
+
+.checkName {
+  flex: 1;
+}
+
+.checkNumbers {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -285,3 +285,28 @@ export const mockVolunteering = {
     return toPublicTask(task);
   },
 };
+
+export interface MockFundraiserSale {
+  id: number;
+  fundraiserId: number;
+  fundraiserTitle: string;
+  amount: number;
+  note: string;
+  recordedAt: string;
+}
+
+/** Every recorded sale across every fundraiser, with the fundraiser's title
+ * resolved — the finance ledger mock needs this to derive fundraiser_sale
+ * entries; the public Fundraiser type only exposes the aggregated total. */
+export function listAllMockFundraiserSales(): MockFundraiserSale[] {
+  const state = loadState();
+  const titleById = new Map(state.fundraisers.map((f) => [f.id, f.title]));
+  return state.sales.map((s) => ({
+    id: s.id,
+    fundraiserId: s.fundraiserId,
+    fundraiserTitle: titleById.get(s.fundraiserId) ?? `Fundraiser #${s.fundraiserId}`,
+    amount: s.amount,
+    note: s.note,
+    recordedAt: s.recordedAt,
+  }));
+}

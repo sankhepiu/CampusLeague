@@ -1,0 +1,141 @@
+@use '../../styles/mixins';
+
+// Pixel fonts are hard to read in dense tables/figures — finance screens pin
+// body text to a readable choice regardless of the visitor's global font
+// option, and right-align every number.
+.readable {
+  font-family: 'Pixelify Sans', 'Courier New', monospace;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.statCard {
+  text-align: right;
+}
+
+.statLabel {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  color: var(--cl-color-text-muted);
+  display: block;
+  margin-bottom: 0.5rem;
+  text-align: left;
+}
+
+.statButton {
+  @include mixins.focus-ring;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  display: block;
+  width: 100%;
+  text-align: right;
+}
+
+.statValue {
+  font-size: 1.6rem;
+}
+
+.positive {
+  color: var(--cl-color-success);
+}
+
+.negative {
+  color: var(--cl-color-danger);
+}
+
+.netNote {
+  color: var(--cl-color-text-muted);
+  font-size: 0.8rem;
+  margin: 1rem 0 0;
+}
+
+.breakdownGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.breakdownTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  margin: 0 0 0.75rem;
+}
+
+.breakdownRows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.breakdownRow {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--cl-color-bg-raised);
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  font: inherit;
+  cursor: pointer;
+  color: var(--cl-color-text);
+  text-align: left;
+}
+
+.breakdownRow:last-child {
+  border-bottom: none;
+}
+
+.breakdownRow:hover {
+  background: var(--cl-tint-row-hover);
+}
+
+.section {
+  margin-bottom: 1.5rem;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.sectionTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.ledgerLink {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.6rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  text-decoration: none;
+  display: inline-block;
+}
+
+.eventPicker {
+  max-width: 22rem;
+  margin-bottom: 1rem;
+}

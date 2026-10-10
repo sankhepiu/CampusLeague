@@ -150,6 +150,13 @@ export function listMockTicketsForUser(email: string): MockTicketRecord[] {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/** Every ticket across every owner — the finance ledger mock needs this to
+ * derive ticket-sale entries, since seeded tickets never go through
+ * POST /events/{id}/tickets and so never reach the shared orders store. */
+export function listAllMockTickets(): MockTicketRecord[] {
+  return loadStore();
+}
+
 function normalizeCode(code: string): string {
   return code.replace(/[\s-]/g, '').toUpperCase();
 }

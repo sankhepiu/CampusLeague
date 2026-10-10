@@ -31,6 +31,7 @@ import { MyExpensesPage } from '../../features/expenses/MyExpensesPage';
 import { ExpenseSubmitPage } from '../../features/expenses/ExpenseSubmitPage';
 import { ExpenseApprovalPage } from '../../features/expenses/ExpenseApprovalPage';
 import { FinancePage } from '../../features/finance/FinancePage';
+import { LedgerPage } from '../../features/finance/LedgerPage';
 import { InsightsPage } from '../../features/insights/InsightsPage';
 import { AdminPage } from '../../features/admin/AdminPage';
 import { FEATURE_ACCESS } from '../config/roles';
@@ -183,6 +184,14 @@ export function AppRoutes() {
           element={
             <ProtectedRoute roles={FEATURE_ACCESS.finance}>
               <FinancePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/finance/ledger"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.finance}>
+              <LedgerPage />
             </ProtectedRoute>
           }
         />
