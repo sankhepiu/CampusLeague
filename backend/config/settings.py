@@ -51,8 +51,30 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework.authtoken',
     'accounts',
 ]
+
+REST_FRAMEWORK = {
+    # Token auth only (team decision; the plan allows "session or token").
+    # The client sends "Authorization: Token <key>".
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    # Deny by default: an endpoint is public only if it says AllowAny itself.
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    # Plan: "JSON in and out".
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+    ],
+    'EXCEPTION_HANDLER': 'common.exceptions.api_exception_handler',
+}
 
 # Must be set before the first migration: every foreign key to a user points
 # at this model.
