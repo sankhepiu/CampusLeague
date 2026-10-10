@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.utils import timezone
 
 from common.models import TimeStampedModel
 
@@ -52,3 +53,59 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 
     def __str__(self):
         return self.email
+
+    def current_roles(self):
+        """Plan: '"current role" = term includes today'. Sorted, no repeats."""
+        today = timezone.localdate()
+        return sorted(set(
+            self.role_assignments
+            .filter(term_start__lte=today, term_end__gte=today)
+            .values_list('role', flat=True)
+        ))
+
+
+class RoleAssignment(TimeStampedModel):
+    """Plan, data model: "RoleAssignment: user FK, role, term_start,
+    term_end. Leadership changes yearly; a user can hold several roles."
+
+    Access changes automatically when a term starts or ends: nothing is
+    edited, the date simply moves past term_end.
+    """
+
+    class Role(models.TextChoices):
+        PRESIDENT = 'president'
+        TREASURER = 'treasurer'
+        EVENT_MANAGER = 'event_manager'
+        VOLUNTEER_COORDINATOR = 'volunteer_coordinator'
+        # Kept as the plan lists it. Membership checks read from Membership,
+        # never from this role.
+        MEMBER = 'member'
+
+    # PROTECT: a user with leadership history cannot be deleted out from
+    # under it.
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name='role_assignments')
+    role = models.CharField(max_length=30, choices=Role.choices)
+    # ASSUMPTION (plan says only "term includes today"): both dates are
+    # inclusive calendar days in the club's time zone.
+    term_start = models.DateField()
+    term_end = models.DateField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(term_end__gte=models.F('term_start')),
+                name='role_term_end_not_before_start',
+            ),
+            # choices are only checked by forms and serializers; this makes
+            # the database refuse an unknown role too.
+            models.CheckConstraint(
+                condition=models.Q(role__in=[
+                    'president', 'treasurer', 'event_manager',
+                    'volunteer_coordinator', 'member',
+                ]),
+                name='role_is_known',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user} {self.role} {self.term_start} to {self.term_end}'

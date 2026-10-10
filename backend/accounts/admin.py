@@ -1,7 +1,15 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import User
+from .models import RoleAssignment, User
+
+
+# Until the president-only /roles endpoint exists, roles are assigned here.
+@admin.register(RoleAssignment)
+class RoleAssignmentAdmin(admin.ModelAdmin):
+    list_display = ['user', 'role', 'term_start', 'term_end']
+    list_filter = ['role']
+    search_fields = ['user__email', 'user__name']
 
 
 @admin.register(User)
