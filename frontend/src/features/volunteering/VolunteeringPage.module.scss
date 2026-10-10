@@ -1,0 +1,45 @@
+@use '../../styles/mixins';
+
+.header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.newButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.6rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  display: block;
+  text-decoration: none;
+  color: var(--cl-color-text);
+}
+
+.title {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.meta {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  margin: 0.75rem 0 0;
+}

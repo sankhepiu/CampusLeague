@@ -36,7 +36,12 @@ export const FEATURE_ACCESS = {
   eventAdmin: ['president', 'event_manager'],
   shopAdmin: ['president', 'treasurer', 'event_manager'],
   announcementCompose: ['president', 'event_manager', 'volunteer_coordinator'],
-  expenses: ['president', 'treasurer', 'volunteer_coordinator'],
+  volunteerAdmin: ['president', 'volunteer_coordinator'],
+  // Submitting/viewing your own reimbursement requests is open to anyone —
+  // only the approval queue below is staff-gated. The old `expenses: [...]`
+  // guess predated the contract; expense SUBMISSION was never staff-only.
+  expenses: null,
+  expenseApproval: ['president', 'treasurer'],
   finance: ['president', 'treasurer'],
   insights: ['president', 'treasurer', 'event_manager'],
   admin: ['president'],

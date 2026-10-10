@@ -20,12 +20,16 @@ import { CartPage } from '../../features/shop/CartPage';
 import { ShopAdminPage } from '../../features/shop/ShopAdminPage';
 import { OrdersPage } from '../../features/orders/OrdersPage';
 import { VolunteeringPage } from '../../features/volunteering/VolunteeringPage';
+import { FundraiserDetailPage } from '../../features/volunteering/FundraiserDetailPage';
+import { FundraiserAdminPage } from '../../features/volunteering/FundraiserAdminPage';
 import { AnnouncementsPage } from '../../features/announcements/AnnouncementsPage';
 import { AnnouncementDetailPage } from '../../features/announcements/AnnouncementDetailPage';
 import { AnnouncementComposerPage } from '../../features/announcements/AnnouncementComposerPage';
 import { AnnouncementDeliveriesPage } from '../../features/announcements/AnnouncementDeliveriesPage';
 import { CheckinPage } from '../../features/checkin/CheckinPage';
-import { ExpensesPage } from '../../features/expenses/ExpensesPage';
+import { MyExpensesPage } from '../../features/expenses/MyExpensesPage';
+import { ExpenseSubmitPage } from '../../features/expenses/ExpenseSubmitPage';
+import { ExpenseApprovalPage } from '../../features/expenses/ExpenseApprovalPage';
 import { FinancePage } from '../../features/finance/FinancePage';
 import { InsightsPage } from '../../features/insights/InsightsPage';
 import { AdminPage } from '../../features/admin/AdminPage';
@@ -66,6 +70,24 @@ export function AppRoutes() {
         <Route path="/shop/:id" element={<ProductDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/volunteering" element={<VolunteeringPage />} />
+        <Route path="/volunteering/:id" element={<FundraiserDetailPage />} />
+
+        <Route
+          path="/volunteering/new"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.volunteerAdmin}>
+              <FundraiserAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/volunteering/:id/edit"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.volunteerAdmin}>
+              <FundraiserAdminPage />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/events/new"
@@ -136,7 +158,23 @@ export function AppRoutes() {
           path="/expenses"
           element={
             <ProtectedRoute roles={FEATURE_ACCESS.expenses}>
-              <ExpensesPage />
+              <MyExpensesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expenses/new"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.expenses}>
+              <ExpenseSubmitPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expenses/approvals"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.expenseApproval}>
+              <ExpenseApprovalPage />
             </ProtectedRoute>
           }
         />

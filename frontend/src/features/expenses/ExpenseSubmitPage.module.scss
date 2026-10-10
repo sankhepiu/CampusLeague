@@ -1,0 +1,87 @@
+@use '../../styles/mixins';
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.fileRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
+.label {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+}
+
+.hint {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.error {
+  color: var(--cl-color-danger);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.preview {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.previewImage {
+  width: 6rem;
+  height: 6rem;
+  object-fit: cover;
+  border: 2px solid var(--cl-color-border);
+}
+
+.previewPdf {
+  width: 6rem;
+  height: 6rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  color: var(--cl-color-text-muted);
+}
+
+.successBox {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.linkButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.6rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  text-decoration: none;
+  display: inline-block;
+  margin: 1rem 0.4rem 0;
+}
