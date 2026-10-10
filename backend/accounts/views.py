@@ -3,12 +3,19 @@ from django.db import transaction
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.exceptions import APIException
+from rest_framework.generics import ListCreateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from .serializers import LoginSerializer, SignupSerializer, UserSerializer
+from audit import services as audit
+
+from .models import RoleAssignment
+from .permissions import has_role
+from .serializers import (
+    LoginSerializer, RoleAssignmentSerializer, SignupSerializer, UserSerializer,
+)
 
 
 class InvalidCredentials(APIException):
@@ -82,3 +89,27 @@ class MeView(APIView):
         # The user comes from the token, never from anything in the request
         # body or query string.
         return Response(UserSerializer(request.user).data)
+
+
+class RoleListCreateView(ListCreateAPIView):
+    """GET/POST /roles. President only (plan: "Assign roles, see audit log")."""
+
+    permission_classes = [has_role('president')]
+    serializer_class = RoleAssignmentSerializer
+    queryset = RoleAssignment.objects.order_by('-term_start', '-id')
+
+    def perform_create(self, serializer):
+        # The assignment and its audit row are saved together or not at all.
+        with transaction.atomic():
+            assignment = serializer.save()
+            audit.record(
+                actor=self.request.user,
+                action='role.assigned',
+                obj=assignment,
+                after={
+                    'user': assignment.user_id,
+                    'role': assignment.role,
+                    'term_start': assignment.term_start.isoformat(),
+                    'term_end': assignment.term_end.isoformat(),
+                },
+            )

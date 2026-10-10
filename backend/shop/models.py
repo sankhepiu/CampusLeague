@@ -49,7 +49,7 @@ class OrderLine(TimeStampedModel):
     """Plan, data model: "OrderLine: order FK, kind (merch, ticket,
     membership), product_size FK or tier FK or plan FK, qty, unit_price".
 
-    Only plan exists so far; product_size and tier arrive with their phases.
+    plan and tier exist so far; product_size arrives with the merch phase.
     """
 
     class Kind(models.TextChoices):
@@ -61,6 +61,9 @@ class OrderLine(TimeStampedModel):
     kind = models.CharField(max_length=10, choices=Kind.choices)
     plan = models.ForeignKey(
         'members.MembershipPlan', null=True, blank=True, on_delete=models.PROTECT, related_name='+',
+    )
+    tier = models.ForeignKey(
+        'events.TicketTier', null=True, blank=True, on_delete=models.PROTECT, related_name='+',
     )
     qty = models.PositiveIntegerField(default=1)
     # Price per unit actually charged, calculated on the server.
@@ -82,6 +85,10 @@ class OrderLine(TimeStampedModel):
             models.CheckConstraint(
                 condition=~models.Q(kind='membership') | models.Q(plan__isnull=False),
                 name='order_line_membership_has_plan',
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(kind='ticket') | models.Q(tier__isnull=False),
+                name='order_line_ticket_has_tier',
             ),
         ]
 

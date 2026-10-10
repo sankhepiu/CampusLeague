@@ -41,3 +41,24 @@ class ApiTestCase(APITestCase):
 
     def field_codes(self, body):
         return {(error['field'], error['code']) for error in body['errors']}
+
+    def give_role(self, user, role, start_offset=-30, end_offset=30):
+        """Assign a role whose term runs from today+start_offset to
+        today+end_offset days (so the default is a current term)."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from accounts.models import RoleAssignment
+
+        today = timezone.localdate()
+        return RoleAssignment.objects.create(
+            user=user, role=role,
+            term_start=today + timedelta(days=start_offset),
+            term_end=today + timedelta(days=end_offset),
+        )
+
+    def make_role_user(self, role, **term):
+        user = self.make_user(email=f'{role}@example.com', name=role.title(), college_id=f'SSA-{role}')
+        self.give_role(user, role, **term)
+        return user

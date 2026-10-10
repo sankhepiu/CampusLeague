@@ -18,7 +18,7 @@ def _amount(value):
 
 
 @transaction.atomic
-def post_entry(*, description, source_type, source_id, kind, lines, created_by=None, reverses=None):
+def post_entry(*, description, source_type, source_id, kind, lines, event=None, created_by=None, reverses=None):
     """Create one balanced ledger entry. The only way entries are written.
 
     lines is a list of (account_code, debit, credit) in paise, for example
@@ -53,6 +53,7 @@ def post_entry(*, description, source_type, source_id, kind, lines, created_by=N
         source_type=source_type,
         source_id=source_id,
         kind=kind,
+        event=event,
         created_by=created_by,
         reverses=reverses,
     )
