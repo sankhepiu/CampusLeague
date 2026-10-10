@@ -1,0 +1,218 @@
+@use '../../styles/mixins';
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 56rem) {
+  .columns {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 32rem) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.column {
+  min-height: 3rem;
+  padding: 0.4rem;
+  border: 2px dashed transparent;
+  transition: border-color 0.12s ease-out, background 0.12s ease-out;
+}
+
+.columnDragOver {
+  border-color: var(--cl-color-primary);
+  background: var(--cl-tint-gold);
+}
+
+.columnTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  margin: 0 0 0.75rem;
+  color: var(--cl-color-text-muted);
+}
+
+.columnCount {
+  color: var(--cl-color-text-muted);
+  opacity: 0.8;
+}
+
+.empty {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+}
+
+.card {
+  margin-bottom: 0.75rem;
+}
+
+.card[draggable='true'] {
+  cursor: grab;
+}
+
+.card[draggable='true']:active {
+  cursor: grabbing;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.dragHandle {
+  color: var(--cl-color-text-muted);
+  line-height: 1.4;
+  user-select: none;
+}
+
+.amount {
+  font-size: 1.05rem;
+}
+
+.meta {
+  color: var(--cl-color-text-muted);
+  font-size: 0.8rem;
+  margin: 0.2rem 0;
+}
+
+.selfNote {
+  color: var(--cl-color-text-muted);
+  font-size: 0.75rem;
+  font-style: italic;
+  margin-top: 0.4rem;
+}
+
+.receiptLink {
+  display: inline-block;
+  font-size: 0.8rem;
+  margin-top: 0.3rem;
+}
+
+.thumb {
+  display: block;
+  width: 100%;
+  max-width: 10rem;
+  max-height: 6rem;
+  object-fit: cover;
+  margin-top: 0.4rem;
+  border: 2px solid var(--cl-color-border);
+}
+
+.moveMenu {
+  position: relative;
+  margin-top: 0.5rem;
+}
+
+.moveToggle {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.55rem;
+  padding: 0.4rem 0.5rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.moveList {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 7rem;
+  margin-top: 0.3rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-panel);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
+}
+
+.moveItem {
+  @include mixins.focus-ring;
+  font-size: 0.8rem;
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  background: none;
+  border: none;
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.moveItem:hover {
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-primary);
+}
+
+// --- Reject reason modal ---
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: grid;
+  place-items: center;
+  background: var(--cl-overlay);
+  padding: 1rem;
+}
+
+.modalCard {
+  @include mixins.pixel-border;
+  @include mixins.depth(var(--cl-coral), 5px, 5px);
+  background: var(--cl-color-panel);
+  padding: 1.75rem;
+  max-width: 26rem;
+  width: 100%;
+}
+
+.modalTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 4rem;
+  font-family: var(--cl-font-body);
+  font-size: 1rem;
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  border: 3px solid var(--cl-color-border);
+  padding: 0.5rem 0.6rem;
+  resize: vertical;
+  margin-top: 0.75rem;
+}
+
+.error {
+  color: var(--cl-color-danger);
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0;
+}
+
+.modalActions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.buttonDanger {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.6rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-danger);
+  color: #fff;
+  cursor: pointer;
+}

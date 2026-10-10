@@ -1,5 +1,28 @@
 @use '../../styles/mixins';
 
+.viewToggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.toggleButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.toggleButtonActive {
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+}
+
 .filterRow {
   margin-bottom: 1rem;
   max-width: 16rem;

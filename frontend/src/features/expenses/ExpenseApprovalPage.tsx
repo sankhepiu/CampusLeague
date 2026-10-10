@@ -12,9 +12,12 @@ import { useAsync } from '../../core/hooks/useAsync';
 import { useAuth } from '../../core/hooks/useAuth';
 import { accentVarForFeature } from '../../core/config/accents';
 import { expensesApi } from './api';
+import { ExpenseKanban } from './ExpenseKanban';
 import type { Expense, ExpenseStatus } from './types';
 import styles from './ExpenseApprovalPage.module.scss';
 import { formatDateTime } from '../../core/utils/formatDateTime';
+
+type ViewMode = 'list' | 'kanban';
 
 const STATUS_VARIANT: Record<ExpenseStatus, StatusBadgeVariant> = { submitted: 'warning', approved: 'info', rejected: 'danger', paid: 'success' };
 const CATEGORY_LABEL: Record<string, string> = { event: 'Event', fundraiser: 'Fundraiser', general: 'General' };
@@ -28,29 +31,59 @@ const FILTER_OPTIONS: { value: ExpenseStatus | ''; label: string }[] = [
 
 export function ExpenseApprovalPage() {
   const { user } = useAuth();
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [filter, setFilter] = useState<ExpenseStatus | ''>('submitted');
-  const { status, data, error, reload } = useAsync(() => expensesApi.listAll({ status: filter || undefined }), [filter]);
+  const { status, data, error, reload } = useAsync(() => expensesApi.listAll({ status: filter || undefined }), [filter], {
+    enabled: viewMode === 'list',
+  });
 
   return (
     <PageShell title="Expense Approvals">
-      <div className={styles.filterRow}>
-        <SelectInput label="View" value={filter} onChange={(e) => setFilter(e.target.value as ExpenseStatus | '')} options={FILTER_OPTIONS} />
+      <div className={styles.viewToggle} role="tablist" aria-label="Approvals view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={viewMode === 'kanban'}
+          className={`${styles.toggleButton} ${viewMode === 'kanban' ? styles.toggleButtonActive : ''}`}
+          onClick={() => setViewMode('kanban')}
+        >
+          Kanban
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={viewMode === 'list'}
+          className={`${styles.toggleButton} ${viewMode === 'list' ? styles.toggleButtonActive : ''}`}
+          onClick={() => setViewMode('list')}
+        >
+          List
+        </button>
       </div>
 
-      {status === 'loading' && <Spinner fullPage label="Loading requests…" />}
-      {status === 'error' && <ErrorBox error={error!} onRetry={reload} />}
-      {status === 'success' && data.results.length === 0 && (
-        <Panel>
-          <EmptyState icon="coin" title="Nothing here" message="No requests match this view." />
-        </Panel>
-      )}
+      {viewMode === 'kanban' && <ExpenseKanban currentUserId={user?.id ?? null} />}
 
-      {status === 'success' && data.results.length > 0 && (
-        <div className={styles.list}>
-          {data.results.map((expense) => (
-            <ExpenseRow key={expense.id} expense={expense} currentUserId={user?.id ?? null} onChanged={reload} />
-          ))}
-        </div>
+      {viewMode === 'list' && (
+        <>
+          <div className={styles.filterRow}>
+            <SelectInput label="View" value={filter} onChange={(e) => setFilter(e.target.value as ExpenseStatus | '')} options={FILTER_OPTIONS} />
+          </div>
+
+          {status === 'loading' && <Spinner fullPage label="Loading requests…" />}
+          {status === 'error' && <ErrorBox error={error!} onRetry={reload} />}
+          {status === 'success' && data.results.length === 0 && (
+            <Panel>
+              <EmptyState icon="coin" title="Nothing here" message="No requests match this view." />
+            </Panel>
+          )}
+
+          {status === 'success' && data.results.length > 0 && (
+            <div className={styles.list}>
+              {data.results.map((expense) => (
+                <ExpenseRow key={expense.id} expense={expense} currentUserId={user?.id ?? null} onChanged={reload} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </PageShell>
   );
