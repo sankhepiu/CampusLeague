@@ -8,6 +8,8 @@ from rest_framework.exceptions import ErrorDetail
 
 from members.services import membership_status
 
+from .models import RoleAssignment
+
 User = get_user_model()
 
 EMAIL_TAKEN = ErrorDetail('An account with this email already exists.', code='email_taken')
@@ -89,3 +91,17 @@ class LoginSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         return value.strip().lower()
+
+
+class RoleAssignmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RoleAssignment
+        fields = ['id', 'user', 'role', 'term_start', 'term_end', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    def validate(self, attrs):
+        if attrs['term_end'] < attrs['term_start']:
+            raise serializers.ValidationError(
+                {'term_end': [ErrorDetail('The term cannot end before it starts.', code='term_end_before_start')]}
+            )
+        return attrs

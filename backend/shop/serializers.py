@@ -6,7 +6,7 @@ from .models import Order, OrderLine, Payment
 class OrderLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderLine
-        fields = ['id', 'kind', 'plan', 'qty', 'unit_price']
+        fields = ['id', 'kind', 'plan', 'tier', 'qty', 'unit_price']
         read_only_fields = fields
 
 

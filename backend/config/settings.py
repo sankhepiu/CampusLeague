@@ -57,6 +57,8 @@ INSTALLED_APPS = [
     'members',
     'shop',
     'finance',
+    'audit',
+    'events',
 ]
 
 REST_FRAMEWORK = {

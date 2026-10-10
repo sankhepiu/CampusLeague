@@ -35,9 +35,11 @@ class LedgerEntry(TimeStampedModel):
 
     class SourceType(models.TextChoices):
         PAYMENT = 'payment'
+        ORDER_LINE = 'order_line'
 
     class Kind(models.TextChoices):
         MEMBERSHIP_DUES = 'membership_dues'
+        TICKET_SALE = 'ticket_sale'
 
     posted_at = models.DateTimeField(default=timezone.now)
     description = models.CharField(max_length=255)
@@ -49,8 +51,11 @@ class LedgerEntry(TimeStampedModel):
     # because one source can post more than once (an expense: approved, then
     # paid).
     kind = models.CharField(max_length=30, choices=Kind.choices)
-    # The plan's optional event FK is added with the events app (Phase 2).
-    #
+    # Plan: "tagged with the event where relevant". This is what lets event
+    # profit be computed straight from the ledger.
+    event = models.ForeignKey(
+        'events.Event', null=True, blank=True, on_delete=models.PROTECT, related_name='ledger_entries',
+    )
     # One-to-one: an entry can be reversed at most once.
     reverses = models.OneToOneField(
         'self', null=True, blank=True, on_delete=models.PROTECT, related_name='reversed_by',

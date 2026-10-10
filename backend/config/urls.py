@@ -17,12 +17,15 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path, re_path
 
+from accounts.views import RoleListCreateView
 from common.views import api_not_found
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),
+    path('api/roles', RoleListCreateView.as_view(), name='role-list'),
     path('api/', include('members.urls')),
+    path('api/', include('events.urls')),
     # Must stay last: anything under /api/ not matched above is a JSON 404.
     re_path(r'^api/', api_not_found),
 ]

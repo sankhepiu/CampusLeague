@@ -63,10 +63,21 @@ python manage.py createsuperuser   # asks for email, name, college ID, password
 Then open http://127.0.0.1:8000/admin/ and add a **Role assignment** for a
 user. A role is current while today is between its term start and term end.
 
+## Daily membership job
+
+```bash
+python manage.py run_membership_job
+```
+
+Marks memberships past their end date as lapsed and emails renewal reminders
+14 and 3 days before expiry (once per window, however often it runs). Emails
+are printed to the terminal in development. In production, schedule it once
+a day (cron); for the demo, run it by hand.
+
 ## The ledger is append-only
 
-`finance_ledgerentry` and `finance_ledgerline` rows cannot be updated or
-deleted, even from the admin or a database shell: PostgreSQL triggers refuse
+`finance_ledgerentry`, `finance_ledgerline` and `audit_auditlog` rows cannot be
+updated or deleted, even from the admin or a database shell: PostgreSQL triggers refuse
 it. Mistakes are corrected with a reversal entry, never by editing. To clear
 local test purchases, reset the whole local database:
 `docker compose down -v`, then start it and run `migrate` again.
