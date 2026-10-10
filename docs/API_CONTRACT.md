@@ -310,7 +310,7 @@ Responses:
     "payment_ref": "mock_5b1f0c3e9a7d4e2f8c6b1a0d9e8f7a6b",
     "created_at": "2026-10-10T11:42:07.123456+05:30",
     "lines": [
-      { "id": 15, "kind": "membership", "plan": 1, "tier": null, "product_size": null, "qty": 1, "unit_price": 50000, "discount": 0 }
+      { "id": 15, "kind": "membership", "label": "Basic membership", "plan": 1, "tier": null, "product_size": null, "qty": 1, "unit_price": 50000, "discount": 0 }
     ]
   },
   "payment": {
@@ -681,10 +681,24 @@ Order line:
 |---|---|---|
 | `id` | integer | |
 | `kind` | string | `membership`, `ticket` or `merch`. |
+| `label` | string | What was bought, ready to display. Read-only. See below. |
 | `plan`, `tier`, `product_size` | integer or `null` | The one matching `kind` is set. |
 | `qty` | integer | |
 | `unit_price` | integer | Per unit, before discount. |
 | `discount` | integer | Total discount on this line. Paid = `qty * unit_price - discount`. |
+
+`label` by kind (the separator is a middle dot, U+00B7, with a space either side):
+
+| `kind` | `label` | Example |
+|---|---|---|
+| `membership` | Plan name + " membership" | `Plus membership` |
+| `ticket` | Event title · tier name | `Spring Gala · General` |
+| `merch` | Product name · size | `Skyline Hoodie · M` |
+
+The label uses the current names, so it follows a later rename of the plan,
+event, tier or product. Every endpoint that returns an order includes it:
+`GET /orders/me`, `POST /orders`, `POST /memberships` and
+`POST /events/{id}/tickets`.
 
 ## Product object
 
@@ -758,9 +772,22 @@ Errors:
 ## GET /orders/me
 
 - **Who:** Any logged-in user. The caller's own orders of every kind
-  (membership, tickets, merch), newest first.
+  (membership, tickets, merch), newest first. Pending and cancelled orders
+  are included; use `status` to tell them apart.
 
-Response `200`: a paginated list of order objects.
+Response `200`: a paginated list of order objects. Each line's `label` says
+what was bought, so no further lookups are needed:
+
+```json
+{
+  "id": 121, "status": "paid", "subtotal": 160000, "discount": 32000, "total": 128000,
+  "payment_ref": "mock_5b1f0c3e9a7d4e2f8c6b1a0d9e8f7a6b", "created_at": "2026-10-10T18:20:00+05:30",
+  "lines": [
+    { "id": 140, "kind": "merch", "label": "Skyline Hoodie · M", "plan": null, "tier": null, "product_size": 2, "qty": 1, "unit_price": 120000, "discount": 24000 },
+    { "id": 141, "kind": "merch", "label": "Skyline T-Shirt · XL", "plan": null, "tier": null, "product_size": 8, "qty": 1, "unit_price": 40000, "discount": 8000 }
+  ]
+}
+```
 
 ## POST /products, PATCH /products/{id}, POST /products/{id}/restock
 
