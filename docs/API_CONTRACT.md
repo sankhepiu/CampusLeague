@@ -381,6 +381,55 @@ Response `200`:
 
 Errors: `401 not_authenticated`, `401 authentication_failed`.
 
+
+## GET /members
+
+Member list with status. Requirements: R1, R5.
+
+- **Who:** President, treasurer or event manager. Anyone else, including a
+  paid-up member, gets `403 permission_denied`.
+- **Database:** read only. Every account is listed, ordered by name; 20 per
+  page.
+
+Query parameters (both optional, and they combine):
+
+| Parameter | Meaning |
+|---|---|
+| `status` | `active`, `lapsed` or `none`: only accounts with that membership status. Any other value is `400 validation_error` on `status` (`invalid_choice`). |
+| `search` | Text matched anywhere in the name **or** email, ignoring case. `college_id` is not searched. |
+
+Response `200`:
+
+```json
+{
+  "count": 46,
+  "next": "http://host/api/members?page=2",
+  "previous": null,
+  "results": [
+    {
+      "id": 20,
+      "email": "member14@skyline.test",
+      "name": "Aadhya Gupta",
+      "college_id": "SSA-014",
+      "roles": [],
+      "membership_status": "active"
+    }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `email`, `name`, `college_id` | string | |
+| `roles` | string[] | Role names whose term includes today, sorted; `[]` for most people. |
+| `membership_status` | string | `active`, `lapsed` or `none`, by the same rule as `/auth/me` and check-in. |
+
+`count` reflects the filters. `GET /members/{id}` (in the plan's table) is not
+built yet.
+
+Errors: `400 validation_error`, `401 not_authenticated`, `403 permission_denied`.
+
 ---
 
 ## GET /roles, POST /roles
@@ -953,9 +1002,15 @@ record behind each entry.
 - `total` equals the sum of every entry's `amount`. In a profit figure,
   expense entries have negative amounts.
 - `entries` is newest first and capped at 200; `entry_count` is the full count.
-- `source.type` is `payment` (dues), `order_line` (tickets, with each ticket
-  and its `checked_in_at`), `order` (merch, with items), `expense_request`
-  (with `receipt_url` and `approved_by`) or `fundraiser_sale`.
+- `source` is `{ "type", "id", "label", "details" }`. `details` by `type`:
+
+| `source.type` | For | `details` keys |
+|---|---|---|
+| `payment` | Membership dues | `order`, `member`, `plan`, `membership`, `amount` |
+| `order_line` | Tickets | `order`, `buyer`, `tickets` (each: `type`, `id`, `code`, `holder`, `price_paid`, `status`, `checked_in_at`) |
+| `order` | Merchandise | `order` (the order id, same as `source.id`), `buyer`, `items` (each: `product`, `size`, `qty`, `unit_price`, `discount`, `paid`) |
+| `expense_request` | Reimbursements | `description`, `requester`, `amount`, `status`, `receipt_url`, `approved_by` (the approver's name, or `null` if not approved) |
+| `fundraiser_sale` | Fundraiser takings | `fundraiser`, `amount`, `recorded_by` |
 
 ---
 
