@@ -1,7 +1,13 @@
+import logging
+
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.http import Http404
-from rest_framework import exceptions
+from rest_framework import exceptions, status
+from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
+from rest_framework.views import set_rollback
+
+logger = logging.getLogger('campusleague.api')
 
 
 def _flatten(details, field=None):
@@ -48,8 +54,23 @@ def api_exception_handler(exc, context):
     # WWW-Authenticate stay correct; only the body is replaced.
     response = drf_exception_handler(exc, context)
     if response is None:
-        # Not an API exception (a bug). Django's 500 handling takes over.
-        return None
+        # Not an API exception, so a bug. The traceback goes to the server
+        # log only; the client gets a generic body even when DEBUG is on.
+        logger.error(
+            'Unhandled error in %s', type(context.get('view')).__name__,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        # Marks the surrounding transaction (if any) for rollback, as DRF
+        # does for the exceptions it handles itself.
+        set_rollback()
+        return Response(
+            {
+                'code': 'server_error',
+                'message': 'Something went wrong on our side. Please try again.',
+                'field': None,
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     if isinstance(exc, exceptions.ValidationError):
         errors = _flatten(exc.get_full_details())

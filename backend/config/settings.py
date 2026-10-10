@@ -54,6 +54,9 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'accounts',
+    'members',
+    'shop',
+    'finance',
 ]
 
 REST_FRAMEWORK = {
@@ -74,6 +77,17 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.JSONParser',
     ],
     'EXCEPTION_HANDLER': 'common.exceptions.api_exception_handler',
+    # Plan: "Lists are paginated".
+    # ASSUMPTION (format not specified): page numbers, 20 per page, body
+    # {count, next, previous, results}.
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    # Per client IP, applied by views that set throttle_scope. Counters live
+    # in Django's default in-memory cache, so they are per server process.
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '20/min',
+        'signup': '10/min',
+    },
 }
 
 # Must be set before the first migration: every foreign key to a user points

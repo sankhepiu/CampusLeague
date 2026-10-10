@@ -5,6 +5,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .serializers import LoginSerializer, SignupSerializer, UserSerializer
@@ -33,6 +34,8 @@ class SignupView(APIView):
     # signup or login into a 401.
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'signup'
 
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
@@ -47,6 +50,9 @@ class SignupView(APIView):
 class LoginView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
+    # Slows down password guessing.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
