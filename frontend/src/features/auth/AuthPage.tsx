@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { Panel } from '../../components/Panel/Panel';
 import { TextInput } from '../../components/FormField/TextInput';
 import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
@@ -45,7 +45,6 @@ interface AuthPageProps {
  * chosen here — they only ever come back from the server on login/signup/me. */
 export function AuthPage({ initialTab }: AuthPageProps) {
   const { status, login, signup } = useAuth();
-  const location = useLocation();
 
   const [tab, setTab] = useState<Tab>(initialTab);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -59,9 +58,10 @@ export function AuthPage({ initialTab }: AuthPageProps) {
   const [loginForm, setLoginForm] = useState<LoginForm>(EMPTY_LOGIN);
   const [signupForm, setSignupForm] = useState<SignupForm>(EMPTY_SIGNUP);
 
+  // Always /home, never back to wherever ProtectedRoute bounced them from —
+  // the demo wants a single, predictable landing spot every time.
   if (status === 'authenticated' && redirectReady) {
-    const from = (location.state as { from?: string } | null)?.from ?? '/home';
-    return <Navigate to={from} replace />;
+    return <Navigate to="/home" replace />;
   }
 
   const switchTab = (next: Tab) => {

@@ -137,7 +137,7 @@ function EntryView({ entry }: { entry: TraceEntry }) {
         </thead>
         <tbody>
           {entry.lines.map((line) => (
-            <tr key={line.id}>
+            <tr key={line.id} className={line.counted === false ? styles.lineUncounted : undefined}>
               <td>
                 {line.account.code} {line.account.name}
               </td>
@@ -192,6 +192,7 @@ function SourceView({ source }: { source: TraceSource }) {
               <th>Size</th>
               <th>Qty</th>
               <th>Unit Price</th>
+              <th>Paid</th>
             </tr>
           </thead>
           <tbody>
@@ -202,6 +203,9 @@ function SourceView({ source }: { source: TraceSource }) {
                 <td>{item.qty}</td>
                 <td>
                   <Money paise={item.unitPrice} />
+                </td>
+                <td>
+                  <Money paise={item.paid} />
                 </td>
               </tr>
             ))}
@@ -230,7 +234,7 @@ function SourceView({ source }: { source: TraceSource }) {
           </div>
           <div className={styles.kv}>
             <span>Description</span>
-            <span>{source.details.description ?? '—'}</span>
+            <span>{source.details.description}</span>
           </div>
           <div className={styles.kv}>
             <span>Approved By</span>
@@ -248,14 +252,16 @@ function SourceView({ source }: { source: TraceSource }) {
         <>
           <div className={styles.kv}>
             <span>Fundraiser</span>
-            <span>{source.details.fundraiser}</span>
+            <span>#{source.details.fundraiser}</span>
           </div>
-          {source.details.note && (
-            <div className={styles.kv}>
-              <span>Note</span>
-              <span>{source.details.note}</span>
-            </div>
-          )}
+          <div className={styles.kv}>
+            <span>Amount</span>
+            <Money paise={source.details.amount} />
+          </div>
+          <div className={styles.kv}>
+            <span>Recorded By</span>
+            <span>{source.details.recordedBy}</span>
+          </div>
         </>
       )}
     </div>

@@ -30,9 +30,15 @@
   cursor: pointer;
 }
 
-.ledgerSide {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+// Each ledger entry has 2+ lines; Account/Debit/Credit cells stack one
+// sub-row per line so a line's account, debit and credit all line up
+// across the three columns instead of being crammed into one cell.
+.lineStack > div {
+  padding: 0.15rem 0;
+}
+
+.lineStack > div:not(:last-child) {
+  border-bottom: 1px solid var(--cl-color-bg-raised);
 }
 
 .pagination {

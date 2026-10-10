@@ -43,6 +43,8 @@ interface WireLedgerLine {
   account: WireLedgerAccount;
   debit: number;
   credit: number;
+  // Only present on a trace entry's lines, not a plain ledger entry's.
+  counted?: boolean;
 }
 
 interface WireLedgerEntry {
@@ -84,6 +86,8 @@ interface WireMerchItem {
   size: string;
   qty: number;
   unit_price: number;
+  discount: number;
+  paid: number;
 }
 
 interface WireSource {
@@ -97,17 +101,18 @@ interface WireSource {
     tickets?: WireTicketDetail[];
     // order (merch) also uses order/buyer above, plus:
     items?: WireMerchItem[];
-    // payment (membership dues)
-    payer?: string;
+    // payment (membership dues): order, member, plan, membership, amount
+    member?: string;
     plan?: string;
-    // expense_request
+    // expense_request: description, requester, amount, status, receipt_url, approved_by
     requester?: string;
     description?: string;
     receipt_url?: string;
     approved_by?: string | null;
-    // fundraiser_sale
-    fundraiser?: string;
-    note?: string;
+    // fundraiser_sale: fundraiser, amount, recorded_by
+    fundraiser?: number;
+    amount?: number;
+    recorded_by?: string;
   };
 }
 
@@ -117,18 +122,18 @@ function fromWireSource(s: WireSource): TraceSource {
     case 'order_line':
       return { type: s.type, id: s.id, label: s.label, details: { order: d.order!, buyer: d.buyer!, tickets: (d.tickets ?? []).map((t) => ({ type: 'ticket', id: t.id, code: t.code, holder: t.holder, pricePaid: t.price_paid, status: t.status, checkedInAt: t.checked_in_at })) } };
     case 'order':
-      // GAP: `order` is missing from the live backend's merch order source
-      // today — left optional rather than force-unwrapped (see types.ts).
-      return { type: s.type, id: s.id, label: s.label, details: { order: d.order, buyer: d.buyer!, items: (d.items ?? []).map((i) => ({ product: i.product, size: i.size, qty: i.qty, unitPrice: i.unit_price })) } };
+      return {
+        type: s.type,
+        id: s.id,
+        label: s.label,
+        details: { order: d.order!, buyer: d.buyer!, items: (d.items ?? []).map((i) => ({ product: i.product, size: i.size, qty: i.qty, unitPrice: i.unit_price, discount: i.discount, paid: i.paid })) },
+      };
     case 'payment':
-      return { type: s.type, id: s.id, label: s.label, details: { payer: d.payer!, plan: d.plan! } };
+      return { type: s.type, id: s.id, label: s.label, details: { payer: d.member!, plan: d.plan! } };
     case 'expense_request':
-      // GAP: `description`/`approved_by` are missing from the live backend's
-      // expense_request source today — left optional rather than
-      // force-unwrapped (see types.ts).
-      return { type: s.type, id: s.id, label: s.label, details: { requester: d.requester!, description: d.description, receiptUrl: d.receipt_url!, approvedBy: d.approved_by } };
+      return { type: s.type, id: s.id, label: s.label, details: { requester: d.requester!, description: d.description!, receiptUrl: d.receipt_url!, approvedBy: d.approved_by ?? null } };
     case 'fundraiser_sale':
-      return { type: s.type, id: s.id, label: s.label, details: { fundraiser: d.fundraiser!, note: d.note ?? '' } };
+      return { type: s.type, id: s.id, label: s.label, details: { fundraiser: d.fundraiser!, amount: d.amount!, recordedBy: d.recorded_by! } };
   }
 }
 
@@ -155,7 +160,7 @@ function fromWireAccountLine(a: WireAccountLine): AccountLine {
 }
 
 function fromWireLines(lines: WireLedgerLine[]): LedgerLine[] {
-  return lines.map((l) => ({ id: l.id, account: l.account, debit: l.debit, credit: l.credit }));
+  return lines.map((l) => ({ id: l.id, account: l.account, debit: l.debit, credit: l.credit, counted: l.counted }));
 }
 
 function fromWireLedgerEntry(e: WireLedgerEntry): LedgerEntry {

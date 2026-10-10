@@ -55,6 +55,7 @@ interface WireMyMembership {
   status: MyMembership['status'];
   membership: WireMembership | null;
   paid_until: string | null;
+  member_qr_token: string | null;
 }
 
 function fromWirePlan(p: WirePlan): Plan {

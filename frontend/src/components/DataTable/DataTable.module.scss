@@ -23,6 +23,12 @@
   white-space: nowrap;
 }
 
+// Right-aligned columns are money/figure columns — tabular numerals keep
+// digits lined up column to column.
+.table td[style*='text-align: right'] {
+  font-variant-numeric: tabular-nums;
+}
+
 .table th {
   font-family: var(--cl-font-pixel);
   font-size: 0.6rem;

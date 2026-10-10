@@ -30,6 +30,12 @@ export interface LedgerLine {
   account: LedgerAccount;
   debit: number; // paise
   credit: number; // paise
+  /** Only present on a TraceEntry's lines (GET /finance/trace), not a plain
+   * GET /finance/ledger listing's: true for the line(s) on the figure's own
+   * account(s) — the ones that make up `amount` — false for the entry's
+   * other side, shown for context. The same entry gets different flags
+   * under different figures. */
+  counted?: boolean;
 }
 
 export interface LedgerEntry {
@@ -85,12 +91,12 @@ export interface TraceMerchItem {
   size: string;
   qty: number;
   unitPrice: number;
+  discount: number; // paise, total for this item
+  paid: number; // paise, what was actually charged for this item (qty * unitPrice - discount)
 }
 
 export interface TraceOrderDetails {
-  // GAP: the live backend doesn't send `order` on a merch order source yet
-  // (teammate is adding it) — optional until then, not force-unwrapped.
-  order?: number;
+  order: number;
   buyer: string;
   items: TraceMerchItem[];
 }
@@ -102,17 +108,17 @@ export interface TracePaymentDetails {
 
 export interface TraceExpenseDetails {
   requester: string;
-  // GAP: the live backend doesn't send `description`/`approved_by` on an
-  // expense_request source yet (teammate is adding it) — optional until
-  // then; CoinTrail renders a dash rather than "undefined" for these.
-  description?: string;
+  description: string;
   receiptUrl: string;
-  approvedBy?: string | null;
+  approvedBy: string | null;
 }
 
 export interface TraceFundraiserSaleDetails {
-  fundraiser: string;
-  note: string;
+  /** The fundraiser's id, not its name — the entry's own description/label
+   * already carries the name (confirmed against the live backend). */
+  fundraiser: number;
+  amount: number; // paise
+  recordedBy: string;
 }
 
 // A discriminated union (not type + a separate details union) so narrowing

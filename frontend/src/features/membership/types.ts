@@ -15,12 +15,6 @@ export interface MembershipRecord {
   status: MembershipRecordStatus;
   startDate: string; // YYYY-MM-DD
   endDate: string;
-  /** GAP: docs/API_CONTRACT.md has no check-in/QR token field anywhere yet
-   * (R5 asks for a QR "rendered from the token the API returns," but no such
-   * token exists in the Membership object today). Undefined against the real
-   * API until the contract defines it; the mock fills it in so the card UI
-   * can be built and reviewed now. Never interpreted client-side either way. */
-  qrToken?: string;
 }
 
 export interface OrderLine {
@@ -72,4 +66,7 @@ export interface MyMembership {
   status: 'active' | 'lapsed' | 'none';
   membership: MembershipRecord | null;
   paidUntil: string | null;
+  /** QR content for the member card, when there's an active/lapsed
+   * membership to show one for; `null` otherwise. */
+  memberQrToken: string | null;
 }
