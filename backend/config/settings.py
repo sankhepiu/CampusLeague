@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     'events',
     'comms',
     'volunteering',
+    'insights',
 ]
 
 def throttle_rate(variable, default):
