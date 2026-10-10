@@ -36,9 +36,10 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return {'id': expense.requester_id, 'name': expense.requester.name}
 
     def get_receipt_url(self, expense):
-        request = self.context.get('request')
-        url = expense.receipt_file.url
-        return request.build_absolute_uri(url) if request else url
+        # Relative (/media/receipts/...), the same form the trace endpoint
+        # returns, so the frontend reaches every receipt through its own
+        # /media proxy regardless of which host the API is on.
+        return expense.receipt_file.url
 
     def get_approval(self, expense):
         approval = getattr(expense, 'approval', None)
