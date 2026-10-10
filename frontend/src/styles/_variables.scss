@@ -1,0 +1,76 @@
+// Campus League design tokens — the single source of truth for color. Every
+// component reads these via var(), nothing is hard-coded. Dark "night campus"
+// surfaces with a gold/violet/cyan accent system; each feature area gets its
+// own accent so its containers can glow a different color (see navItems.ts).
+:root {
+  // --- Raw palette -----------------------------------------------------
+  --cl-base: #0b0a1a;
+  --cl-surface: #14122b;
+  --cl-raised: #1d1a3d;
+  --cl-border: #2e2a5c;
+
+  --cl-gold: #ffc83d;
+  --cl-gold-deep: #e0a21b;
+  --cl-violet: #7c5cff;
+  --cl-cyan: #3de0ff;
+  --cl-green: #35e08a;
+  --cl-coral: #ff5c7a;
+
+  --cl-text: #f2efff;
+  --cl-muted: #a9a3d6;
+
+  // Structural extras that aren't part of the named palette but are still
+  // tokens, not literals: the hard pixel drop-shadow, the 1px top highlight
+  // that reads as a bevel, and the modal scrim.
+  --cl-shadow: #05040c;
+  --cl-edge-light: rgba(242, 239, 255, 0.16);
+  --cl-overlay: rgba(6, 4, 16, 0.78);
+
+  // --- Semantic aliases (what components actually consume) -------------
+  --cl-color-bg: var(--cl-base);
+  --cl-color-surface: var(--cl-surface);
+  --cl-color-panel: var(--cl-surface);
+  --cl-color-bg-raised: var(--cl-raised);
+  --cl-color-border: var(--cl-border);
+  --cl-color-border-shadow: var(--cl-shadow);
+
+  --cl-color-primary: var(--cl-gold);
+  --cl-color-primary-dark: var(--cl-gold-deep);
+  --cl-color-secondary: var(--cl-cyan);
+  --cl-color-success: var(--cl-green);
+  --cl-color-danger: var(--cl-coral);
+  --cl-color-warning: var(--cl-gold);
+  --cl-color-focus: var(--cl-violet);
+
+  --cl-color-text: var(--cl-text);
+  --cl-color-text-muted: var(--cl-muted);
+
+  // Low-alpha tints derived from the palette, used for hover/stripe fills
+  // instead of ad-hoc rgba() literals.
+  --cl-tint-row-hover: color-mix(in srgb, var(--cl-text) 4%, transparent);
+  --cl-tint-danger: color-mix(in srgb, var(--cl-coral) 10%, transparent);
+  --cl-tint-gold: color-mix(in srgb, var(--cl-gold) 7%, transparent);
+  --cl-tint-cyan: color-mix(in srgb, var(--cl-cyan) 7%, transparent);
+
+  // --- Per-feature-area accents — each area's containers glow this color.
+  --cl-accent-membership: var(--cl-violet);
+  --cl-accent-events: var(--cl-cyan);
+  --cl-accent-tickets: var(--cl-gold);
+  --cl-accent-shop: var(--cl-gold);
+  --cl-accent-orders: var(--cl-gold);
+  --cl-accent-volunteering: var(--cl-violet);
+  --cl-accent-announcements: var(--cl-cyan);
+  --cl-accent-checkin: var(--cl-cyan);
+  --cl-accent-expenses: var(--cl-coral);
+  --cl-accent-finance: var(--cl-green);
+  --cl-accent-insights: var(--cl-violet);
+  --cl-accent-admin: var(--cl-coral);
+  --cl-accent-default: var(--cl-gold);
+
+  --cl-font-pixel: 'Press Start 2P', 'Courier New', monospace;
+  --cl-font-body: 'Pixelify Sans', 'Courier New', monospace;
+
+  --cl-border-width: 4px;
+  --cl-notch: 8px;
+  --cl-radius: 0px;
+}

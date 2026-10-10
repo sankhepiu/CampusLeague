@@ -1,0 +1,16 @@
+.footer {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  border-top: 2px solid var(--cl-color-bg-raised);
+}
+
+.brand {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  color: var(--cl-color-primary);
+  display: block;
+  margin-bottom: 0.4rem;
+  letter-spacing: 1px;
+}

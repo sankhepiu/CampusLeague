@@ -1,0 +1,13 @@
+@use '../../styles/mixins';
+
+.panel {
+  @include mixins.pixel-border;
+  @include mixins.pixel-corners;
+  @include mixins.depth(var(--panel-accent, var(--cl-accent-default)));
+  background: var(--cl-color-panel);
+  padding: 1.25rem;
+}
+
+.raised {
+  background: var(--cl-color-bg-raised);
+}

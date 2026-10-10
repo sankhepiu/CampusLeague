@@ -1,0 +1,43 @@
+@use '../../styles/mixins';
+
+// Tables never get the 3D/tilt treatment, per the "no heavy effects on
+// finance, ledger, forms or tables" rule — flat depth only.
+.wrapper {
+  @include mixins.pixel-border;
+  @include mixins.depth-flat;
+  background: var(--cl-color-panel);
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 2px solid var(--cl-color-bg-raised);
+  white-space: nowrap;
+}
+
+.table th {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  color: var(--cl-color-primary);
+  background: var(--cl-color-bg-raised);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background: var(--cl-tint-row-hover);
+}
+
+.statusCell {
+  padding: 2rem;
+}

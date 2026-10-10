@@ -1,0 +1,63 @@
+@keyframes coin-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes coin-spin {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
+
+.wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  perspective: 320px;
+}
+
+.glow {
+  position: absolute;
+  bottom: -14px;
+  width: 64px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--cl-gold) 65%, transparent) 0%, transparent 72%);
+  filter: blur(1px);
+}
+
+.bob {
+  animation: coin-bob 2.6s ease-in-out infinite;
+}
+
+.spin {
+  position: relative;
+  transform-style: preserve-3d;
+  animation: coin-spin 3.4s linear infinite;
+}
+
+.face {
+  backface-visibility: hidden;
+}
+
+.back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+}
+
+/* Static fallback for reduced motion / low-power devices: the component
+   simply omits the .bob and .spin classes, which leaves everything at its
+   rest transform (translateY(0), rotateY(0deg)) — a flat, motionless coin
+   with no behavior change needed here. */
+.flat {
+  perspective: none;
+}
