@@ -3,14 +3,26 @@ from django.core.management import CommandError, call_command
 from django.db.models import F, Sum
 from django.test import TransactionTestCase, override_settings
 
+import os
+from datetime import timedelta
+
+from django.conf import settings
+from django.utils import timezone
+
 from audit.models import AuditLog
+from comms.models import Announcement
 from common import seed
 from events.models import CheckIn, Event, Ticket, TicketTier
-from finance.models import LedgerAccount, LedgerEntry, LedgerLine
+from finance import reports
+from finance.models import ExpenseRequest, LedgerAccount, LedgerEntry, LedgerLine
+from finance.tests.helpers import TempMediaMixin
 from finance.services import account_balance
 from members.models import Membership
 from members.services import membership_status
-from shop.models import Order, OrderLine, Payment
+from shop import stock
+from volunteering.models import Fundraiser
+from volunteering.services import progress
+from shop.models import Order, OrderLine, Payment, Product
 
 User = get_user_model()
 
@@ -26,6 +38,7 @@ def snapshot():
         'events': Event.objects.count(), 'tickets': Ticket.objects.count(),
         'checkins': CheckIn.objects.count(), 'orders': Order.objects.count(),
         'payments': Payment.objects.count(), 'entries': LedgerEntry.objects.count(),
+        'products': Product.objects.count(), 'announcements': Announcement.objects.count(),
         'cash': account_balance('1000'),
     }
 
@@ -33,7 +46,7 @@ def snapshot():
 # Real commits (TransactionTestCase): the command's own transaction, the
 # deferred ledger trigger and TRUNCATE all behave exactly as in development.
 @override_settings(DEBUG=True)
-class SeedDemoTests(TransactionTestCase):
+class SeedDemoTests(TempMediaMixin, TransactionTestCase):
     serialized_rollback = True
 
     def setUp(self):
@@ -83,20 +96,74 @@ class SeedDemoTests(TransactionTestCase):
         payments = Payment.objects.aggregate(total=Sum('amount'))['total']
         dues = OrderLine.objects.filter(kind='membership').aggregate(total=Sum(F('qty') * F('unit_price')))['total']
         tickets = Ticket.objects.aggregate(total=Sum('price_paid'))['total']
-        self.assertEqual(account_balance('1000'), payments)
         self.assertEqual(account_balance('4000'), dues)
         self.assertEqual(account_balance('4100'), tickets)
-        self.assertEqual(payments, dues + tickets)
+        merch = sum(line.amount for line in OrderLine.objects.filter(kind='merch'))
+        self.assertEqual(account_balance('4200'), merch)
+        self.assertGreater(merch, 0)
+        self.assertEqual(payments, dues + tickets + merch)
 
         totals = LedgerLine.objects.aggregate(debit=Sum('debit'), credit=Sum('credit'))
         self.assertEqual(totals['debit'], totals['credit'])
-        # One entry per source: a payment per membership, a line per ticket order.
-        self.assertEqual(LedgerEntry.objects.count(), Payment.objects.count())
+        # The app's own reconciliation endpoint agrees, check by check.
+        result = reports.reconcile()
+        self.assertEqual([check['name'] for check in result['checks'] if not check['ok']], [])
+        self.assertTrue(result['ok'])
+        self.assertGreater(account_balance('1000'), 0)
         self.assertEqual(Order.objects.exclude(status='paid').count(), 0)
 
     def test_every_ticket_revenue_entry_is_tagged_with_its_event(self):
         self.assertFalse(LedgerEntry.objects.filter(kind='ticket_sale', event__isnull=True).exists())
         self.assertFalse(LedgerEntry.objects.filter(kind='membership_dues', event__isnull=False).exists())
+
+    def test_shop_has_two_products_with_one_size_nearly_sold_out(self):
+        stock_levels = {
+            product.name: {size.size: size.stock for size in product.sizes.all()}
+            for product in Product.objects.all()
+        }
+        self.assertEqual(stock_levels, {
+            'Skyline Hoodie': {'S': 8, 'M': 5, 'L': 6, 'XL': 1},
+            'Skyline T-Shirt': {'S': 15, 'M': 16, 'L': 13, 'XL': 10},
+        })
+        self.assertEqual(stock.stock_mismatches(), [])
+        # Every restock was audited.
+        self.assertEqual(AuditLog.objects.filter(action='stock.restocked').count(), 8)
+
+    def test_two_past_announcements_with_delivery_logs(self):
+        announcements = list(Announcement.objects.all())
+        self.assertEqual(len(announcements), 2)
+        for announcement in announcements:
+            self.assertLess(announcement.published_at, timezone.now() - timedelta(days=1))
+            self.assertEqual(announcement.deliveries.count(), 46)
+            self.assertFalse(announcement.deliveries.exclude(status='sent').exists())
+
+    def test_fundraiser_tasks_and_expenses_match_the_demo_story(self):
+        bake_sale = Fundraiser.objects.get(title='Bake Sale')
+        figures = progress(bake_sale)
+        self.assertEqual((figures['raised_amount'], figures['tasks_total'], figures['tasks_done']), (740000, 4, 1))
+        self.assertTrue(0 < figures['raised_pct'] < 100)            # goal bar partly filled
+        self.assertTrue(figures['on_track'])
+
+        statuses = sorted(ExpenseRequest.objects.values_list('status', flat=True))
+        self.assertEqual(statuses, ['approved', 'approved', 'paid', 'paid', 'paid', 'rejected', 'submitted'])
+        for expense in ExpenseRequest.objects.all():
+            self.assertTrue(os.path.exists(expense.receipt_file.path), expense)
+            with open(expense.receipt_file.path, 'rb') as handle:
+                self.assertEqual(handle.read(8), b'\x89PNG\r\n\x1a\n')
+        # Nobody approved or paid their own request.
+        for expense in ExpenseRequest.objects.exclude(status='submitted'):
+            self.assertNotEqual(expense.approval.approver_id, expense.requester_id)
+
+    def test_past_event_has_revenue_and_expenses(self):
+        pnl = reports.event_pnl(Event.objects.get(title='Freshers Night'))
+        self.assertEqual((pnl['revenue']['total'], pnl['expenses']['total'], pnl['profit']), (740000, 450000, 290000))
+
+    def test_reset_removes_old_receipt_files(self):
+        before = set(os.listdir(os.path.join(settings.MEDIA_ROOT, 'receipts')))
+        run('--reset')
+        after = set(os.listdir(os.path.join(settings.MEDIA_ROOT, 'receipts')))
+        self.assertEqual(len(after), 7)
+        self.assertEqual(before & after, set())
 
     def test_refuses_to_seed_twice_without_reset(self):
         before = snapshot()
@@ -112,7 +179,11 @@ class SeedDemoTests(TransactionTestCase):
         run('--reset')
 
         self.assertEqual(snapshot(), before)
-        self.assertEqual(AuditLog.objects.count(), 0)
+        # The marker written before the reset is gone; the only audit rows
+        # are the ones the seed itself writes.
+        self.assertFalse(AuditLog.objects.filter(action='test.marker').exists())
+        self.assertEqual(AuditLog.objects.filter(action='stock.restocked').count(), 8)
+        self.assertEqual(AuditLog.objects.count(), 8 + 9)      # plus 5 approvals, 3 payouts, 1 rejection
         self.assertEqual(LedgerAccount.objects.count(), 9)     # chart of accounts kept
         self.assertEqual(Event.objects.order_by('id').first().id, 1)   # ids restart
 

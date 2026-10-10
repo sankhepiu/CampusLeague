@@ -310,7 +310,7 @@ Responses:
     "payment_ref": "mock_5b1f0c3e9a7d4e2f8c6b1a0d9e8f7a6b",
     "created_at": "2026-10-10T11:42:07.123456+05:30",
     "lines": [
-      { "id": 15, "kind": "membership", "plan": 1, "tier": null, "qty": 1, "unit_price": 50000 }
+      { "id": 15, "kind": "membership", "plan": 1, "tier": null, "product_size": null, "qty": 1, "unit_price": 50000, "discount": 0 }
     ]
   },
   "payment": {
@@ -610,3 +610,381 @@ Event revenue minus expenses, budget vs actual. Requirement: R10.
 - `expenses` stays empty until reimbursements (Phase 4) post to the ledger.
 
 Errors: `401`, `403 permission_denied`, `404 not_found`.
+
+---
+
+## Order object
+
+Returned by every purchase endpoint and by `GET /orders/me`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `status` | string | `pending`, `paid` or `cancelled`. |
+| `subtotal`, `discount`, `total` | integer | Paise. `total = subtotal - discount`, always. |
+| `payment_ref` | string | Gateway reference; `""` until paid. |
+| `created_at` | timestamp | |
+| `lines` | line[] | |
+
+Order line:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `kind` | string | `membership`, `ticket` or `merch`. |
+| `plan`, `tier`, `product_size` | integer or `null` | The one matching `kind` is set. |
+| `qty` | integer | |
+| `unit_price` | integer | Per unit, before discount. |
+| `discount` | integer | Total discount on this line. Paid = `qty * unit_price - discount`. |
+
+## Product object
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `name`, `description` | string | |
+| `base_price` | integer | Paise, before member discount. |
+| `price` | integer | What **the caller** would pay per item now (their plan's `merch_discount_pct` applied if their membership is active). Display this one. |
+| `image` | string | **Assumption:** a URL; `""` if none. No upload endpoint. |
+| `active` | boolean | Inactive products are returned to shop staff only. |
+| `sizes` | array | Always `S`, `M`, `L`, `XL` in that order: `{ "id", "size", "stock" }`. Use `id` when ordering. |
+
+## GET /products
+
+Requirements: R13, R14.
+
+- **Who:** Public. Send the token when logged in so `price` reflects membership.
+
+Response `200`: a paginated list of product objects.
+
+```json
+{
+  "id": 1, "name": "Skyline Hoodie", "description": "Heavyweight fleece with the club crest.",
+  "base_price": 120000, "price": 96000, "image": "", "active": true,
+  "sizes": [ { "id": 1, "size": "S", "stock": 8 }, { "id": 2, "size": "M", "stock": 5 },
+             { "id": 3, "size": "L", "stock": 6 }, { "id": 4, "size": "XL", "stock": 1 } ]
+}
+```
+
+## POST /orders
+
+Order merchandise. Requirements: R3, R13, R14.
+
+- **Who:** Any logged-in user.
+- **Database:** in one transaction, with every ordered size row locked: stock
+  check, order with one line per size, payment, stock decrease with one stock
+  movement per line, and one ledger entry for the order (debit Cash 1000,
+  credit Merchandise revenue 4200, at the amount actually paid). If any part
+  fails, none of it is saved; one unavailable size refuses the whole basket.
+- **Price and discount:** from the server only. Anything in the body is ignored.
+  **Assumption:** the discount is rounded down to a whole paisa per line.
+- **Header:** `Idempotency-Key`, as for `POST /memberships`.
+
+Request:
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `items` | array | yes | 1 to 20 entries; each size at most once (`duplicate_item`). |
+| `items[].product_size` | integer | yes | A size `id` from `GET /products`. |
+| `items[].quantity` | integer | no | 1 to 10, default 1. |
+| `test_outcome` | string | no | `success` (default), `failure`, `pending`. |
+
+```json
+{ "items": [ { "product_size": 2, "quantity": 1 } ] }
+```
+
+Responses: `201` (or `200` on a replay) with `order` and `payment`; `202`
+when pending (no stock is held).
+
+Errors:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `idempotency_key_required`, `validation_error` | |
+| 402 | `payment_failed` | `test_outcome: failure`. Stock untouched. |
+| 409 | `out_of_stock` | A size has less stock than requested. `message` names the product, size and what is left. |
+| 409 | `product_unavailable` | A size id does not exist or its product is inactive. |
+| 409 | `idempotency_key_reused` | Key already paid for a different basket. |
+
+## GET /orders/me
+
+- **Who:** Any logged-in user. The caller's own orders of every kind
+  (membership, tickets, merch), newest first.
+
+Response `200`: a paginated list of order objects.
+
+## POST /products, PATCH /products/{id}, POST /products/{id}/restock
+
+- **Who:** President, treasurer or event manager.
+- **Product fields:** `name` (unique), `base_price` (required on create);
+  `description`, `image`, `active`. PATCH accepts any subset. Stock cannot be
+  set here. **Assumption:** a new product gets all four sizes at zero stock.
+- **Restock:** `{ "size": "M", "quantity": 7 }`, quantity 1 to 10000. Adds to
+  stock, writes a stock movement and an audit-log row (`stock.restocked`).
+
+Responses: the product object (`201` on create, otherwise `200`).
+Errors: `400 validation_error`, `401`, `403 permission_denied`, `404 not_found`.
+
+---
+
+## Announcement object
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `title`, `body` | string | |
+| `audience` | string | **Assumption:** `all` (every active account) or `members` (active memberships only). |
+| `author` | object | `{ "id", "name" }`. |
+| `published_at` | timestamp | |
+| `deliveries` | object or `null` | `{ "recipients", "queued", "sent", "failed" }` for president, event manager and volunteer coordinator; `null` for everyone else. |
+
+## GET /announcements, GET /announcements/{id}
+
+The archive: what was said, when, and by whom. Requirement: R12.
+
+- **Who:** Public. Newest first. Reads saved announcements, so it is complete
+  even when email failed.
+
+## POST /announcements
+
+One post reaches everyone. Requirement: R11.
+
+- **Who:** President, event manager or volunteer coordinator.
+- **Database:** first the announcement and one delivery row per recipient are
+  saved (status `queued`). Then each is emailed and its row marked `sent` or
+  `failed` with the error. An email failure never loses the announcement.
+
+Request: `title` (max 200), `body`, optional `audience` (default `all`).
+The author and time are set by the server.
+
+Response `201`: the announcement object with `deliveries` filled in. Check
+`deliveries.failed` to tell the user some emails did not go out.
+
+```json
+{
+  "id": 3, "title": "Hoodies restocked", "body": "All sizes back this week.", "audience": "all",
+  "author": { "id": 2, "name": "Ananya Rao" },
+  "published_at": "2026-10-10T13:17:02+05:30",
+  "deliveries": { "recipients": 46, "queued": 0, "sent": 46, "failed": 0 }
+}
+```
+
+Failed emails are retried by the server (`manage.py send_announcements`), at
+most 3 attempts each. There is no retry endpoint yet. Announcements cannot be
+edited or deleted.
+
+Errors: `400 validation_error`, `401`, `403 permission_denied`.
+
+## GET /announcements/{id}/deliveries
+
+The delivery log. Not in the plan's endpoint table; added so the app can
+"show the delivery log" as the plan asks.
+
+- **Who:** President, event manager or volunteer coordinator (it lists email
+  addresses).
+
+Response `200`: a paginated list of
+`{ "id", "recipient": { "id", "name", "email" }, "status", "attempts", "last_error", "updated_at" }`.
+
+---
+
+## Expense object
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer | |
+| `requester` | object | `{ "id", "name" }`. |
+| `amount` | integer | Paise. |
+| `category` | string | **Assumption:** `event`, `fundraiser` or `general`, one per expense account (5000, 5100, 5200). |
+| `event`, `fundraiser` | integer or `null` | `event` category needs `event`; `fundraiser` needs `fundraiser`; `general` takes neither. |
+| `description` | string | Max 500. |
+| `receipt_url` | string | Absolute URL of the uploaded receipt. |
+| `status` | string | `submitted`, `approved`, `rejected` or `paid`. |
+| `created_at` | timestamp | |
+| `approval` | object or `null` | `{ "decision", "reason", "decided_at", "approver": { "id", "name" } }` once decided. |
+
+Status only ever changes through the three decision endpoints below. There is
+no endpoint to edit an expense.
+
+## POST /expenses
+
+Submit an expense with its receipt. Requirement: R18.
+
+- **Who:** Any logged-in user.
+- **Body:** `multipart/form-data` (the one endpoint that is not JSON), fields
+  `amount`, `category`, `description`, `receipt_file`, and `event` or
+  `fundraiser` as the category requires.
+- **Receipt:** JPG, PNG or PDF, at most 5 MB. The file's content is checked,
+  not just its name. Codes on `receipt_file`: `required`,
+  `unsupported_file_type`, `file_too_large`, `file_content_mismatch`.
+- **Database:** one expense, always `submitted`, requester = the caller. No
+  ledger entry yet.
+
+Response `201`: the expense object. Errors: `400 validation_error` (also
+`event_required`, `fundraiser_required`, `tag_not_allowed`), `401`.
+
+## GET /expenses, GET /expenses/me
+
+- `GET /expenses`: president or treasurer. Every request, newest first.
+  Filter with `?status=submitted` for the approval queue.
+- `GET /expenses/me`: any logged-in user; only their own.
+
+Response `200`: a paginated list of expense objects.
+
+## POST /expenses/{id}/approve, /reject, /mark-paid
+
+Requirement: R18.
+
+- **Who:** President or treasurer, and **never the requester** (`403
+  self_approval`), even if the requester holds one of those roles.
+- **Body (JSON):** `approve`: optional `reason`. `reject`: `reason` required
+  (**Assumption**). `mark-paid`: no body.
+- **Database:** each runs in one transaction with the request row locked,
+  and writes an audit-log row.
+
+| Action | Allowed from | Becomes | Ledger entry |
+|---|---|---|---|
+| `approve` | `submitted` | `approved` | Debit the expense account, credit Reimbursements payable 2000 (tagged with the event). |
+| `reject` | `submitted` | `rejected` | None. |
+| `mark-paid` | `approved` | `paid` | Debit Reimbursements payable 2000, credit Cash 1000. |
+
+Response `200`: the updated expense object.
+
+Errors:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `validation_error` | `reject` without a `reason`. |
+| 403 | `permission_denied` | Not a current president or treasurer. |
+| 403 | `self_approval` | The caller submitted this request. |
+| 404 | `not_found` | |
+| 409 | `invalid_status` | The action is not allowed from the current status (already decided, not yet approved, already paid). |
+
+---
+
+## GET /finance/summary
+
+The one-page treasurer view. Requirement: R17.
+
+- **Who:** President or treasurer (as for every `/finance/` endpoint).
+- **Database:** read only; every figure is summed from ledger lines.
+
+```json
+{
+  "came_in": { "total": 7108000, "by_account": [ { "code": "4000", "name": "Membership dues revenue", "amount": 2400000 } ] },
+  "went_out": { "total": 1007000, "by_account": [ { "code": "5000", "name": "Event expenses", "amount": 992000 } ] },
+  "net": 6101000,
+  "cash": 6236000,
+  "payable": 135000
+}
+```
+
+`cash` is what is in the bank; `payable` is approved reimbursements not yet
+paid. `net` differs from `cash` by exactly `payable`.
+
+## GET /finance/ledger
+
+Paginated ledger entries, newest first, each with its lines:
+
+```json
+{
+  "id": 131, "posted_at": "2026-10-10T13:30:02+05:30", "description": "Expense approved: Venue deposit",
+  "source_type": "expense_request", "source_id": 4, "kind": "expense_approved", "event": 2, "reverses": null,
+  "lines": [
+    { "id": 261, "account": { "code": "5000", "name": "Event expenses", "type": "expense" }, "debit": 500000, "credit": 0 },
+    { "id": 262, "account": { "code": "2000", "name": "Reimbursements payable", "type": "liability" }, "debit": 0, "credit": 500000 }
+  ]
+}
+```
+
+Filters: `?account=<code>`, `?event=<id>`, `?kind=<kind>`. Kinds:
+`membership_dues`, `ticket_sale`, `merch_sale`, `fundraiser_sale`,
+`expense_approved`, `expense_paid`.
+
+## GET /finance/reconcile
+
+Compares ledger totals with the same figures computed from the source tables.
+
+```json
+{
+  "ok": true,
+  "checks": [
+    { "name": "Ticket revenue equals paid ticket order lines", "ok": true, "expected": 2820000, "actual": 2820000 }
+  ]
+}
+```
+
+Eleven checks: ledger debits equal credits; the plan's cash identity; cash
+against payments, fundraiser takings and payouts; each of the four revenue
+accounts against its source records; expenses and payables against expense
+requests; seats sold against tickets; stock against stock movements.
+
+## GET /finance/trace?figure=...
+
+The Coin Trail: a figure, the entries that make it up, their lines, and the
+record behind each entry.
+
+`figure` is one of: `came_in`, `went_out`, `cash`, `payable`,
+`account:<code>`, `event:<id>:revenue`, `event:<id>:expenses`,
+`event:<id>:profit`. Anything else is `400 validation_error` on `figure`
+(`unknown_figure`).
+
+```json
+{
+  "figure": "event:1:profit",
+  "label": "Freshers Night: profit",
+  "total": 290000,
+  "entry_count": 38,
+  "entries": [
+    {
+      "id": 44, "posted_at": "...", "description": "Tickets: Freshers Night / General x1", "kind": "ticket_sale",
+      "amount": 30000,
+      "lines": [ { "id": 88, "account": { "code": "4100", "name": "Ticket revenue" }, "debit": 0, "credit": 30000 } ],
+      "source": {
+        "type": "order_line", "id": 44, "label": "Amrita Pillai bought 1 x General for Freshers Night",
+        "details": { "order": 44, "buyer": "Amrita Pillai",
+                     "tickets": [ { "type": "ticket", "id": 35, "code": "C2XZ22P4", "holder": "Amrita Pillai", "price_paid": 30000, "status": "valid", "checked_in_at": null } ] }
+      }
+    }
+  ]
+}
+```
+
+- `total` equals the sum of every entry's `amount`. In a profit figure,
+  expense entries have negative amounts.
+- `entries` is newest first and capped at 200; `entry_count` is the full count.
+- `source.type` is `payment` (dues), `order_line` (tickets, with each ticket
+  and its `checked_in_at`), `order` (merch, with items), `expense_request`
+  (with `receipt_url` and `approved_by`) or `fundraiser_sale`.
+
+---
+
+## Fundraiser and task objects
+
+Fundraiser:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `title` | | |
+| `goal_amount` | integer | Paise. |
+| `starts_on`, `ends_on` | date | |
+| `status` | string | **Assumption:** `planned`, `active` or `closed`. |
+| `progress` | object | `{ "goal_amount", "raised_amount", "raised_pct", "tasks_total", "tasks_done", "on_track" }`. `raised_amount` is summed from the ledger. `raised_pct` is capped at 100. **Assumption:** `on_track` means the share of the goal raised is at least the share of the time elapsed. |
+| `tasks` | task[] | |
+
+Task: `{ "id", "fundraiser", "event", "title", "description", "status", "due_date", "assignees": [ { "id", "name", "role_note" } ] }`.
+`status` is `todo`, `doing` or `done`. A task belongs to exactly one
+fundraiser or one event.
+
+## Volunteering endpoints
+
+Requirements: R15, R16.
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /fundraisers`, `GET /fundraisers/{id}` | Any logged-in user | Tasks, owners and progress. |
+| `POST /fundraisers`, `PATCH /fundraisers/{id}` | President, volunteer coordinator | `title`, `goal_amount`, `starts_on`, `ends_on`, `status`. |
+| `POST /fundraisers/{id}/sales` | President, volunteer coordinator | `{ "amount", "note" }`. Records takings and posts the ledger entry (debit Cash, credit Fundraiser revenue 4300). **Not in the plan's table;** added with the sale record the plan's posting rules require. Returns the fundraiser. |
+| `POST /tasks`, `PATCH /tasks/{id}` | President, volunteer coordinator | `fundraiser` or `event`, `title`, `description`, `due_date`. Status is not editable here. |
+| `POST /tasks/{id}/assign` | President, volunteer coordinator | `{ "user", "role_note" }`. Assigning the same person again updates the note. |
+| `PATCH /tasks/{id}/status` | An assignee of that task, president, volunteer coordinator | `{ "status" }`. Anyone else: `403 permission_denied`. |
