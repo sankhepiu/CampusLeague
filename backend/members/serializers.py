@@ -1,8 +1,26 @@
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from shop.payments import OUTCOMES, SUCCESS
 
 from .models import Membership, MembershipPlan
+
+
+class MemberSerializer(serializers.ModelSerializer):
+    """One row of the member list (GET /members)."""
+
+    roles = serializers.SerializerMethodField()
+    # Annotated by members.services.with_membership_status.
+    membership_status = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = get_user_model()
+        fields = ['id', 'email', 'name', 'college_id', 'roles', 'membership_status']
+        read_only_fields = fields
+
+    def get_roles(self, user):
+        # current_assignments is prefetched by the view (current terms only).
+        return sorted({assignment.role for assignment in user.current_assignments})
 
 
 class PlanSerializer(serializers.ModelSerializer):
