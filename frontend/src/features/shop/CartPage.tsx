@@ -8,20 +8,25 @@ import { Spinner } from '../../components/Spinner/Spinner';
 import { Money } from '../../components/Money/Money';
 import { ReplayNote, TestPayment } from '../../components/TestPayment/TestPayment';
 import { isRetryablePaymentError } from '../../components/TestPayment/paymentErrors';
+import { RazorpayPayButton } from '../../components/RazorpayPayButton/RazorpayPayButton';
 import type { ApiError } from '../../api/client';
 import { useAuth } from '../../core/hooks/useAuth';
 import { useCart } from '../../core/hooks/useCart';
+import { usePaymentsConfig } from '../../core/hooks/usePaymentsConfig';
 import { accentVarForFeature } from '../../core/config/accents';
 import { shopApi } from './api';
+import { razorpayErrorMessage } from '../payments/errors';
+import type { RazorpayVerifyFields } from '../payments/types';
 import type { PaymentTestOutcome, PlaceOrderResult } from './types';
 import styles from './CartPage.module.scss';
 
-type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error';
+type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error' | 'cancelled';
 
 export function CartPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { items, updateQuantity, removeItem, clear, estimatedSubtotal } = useCart();
+  const { gateway } = usePaymentsConfig();
 
   // Two steps: review the cart, then the (test mode) payment screen.
   const [atPayment, setAtPayment] = useState(false);
@@ -78,6 +83,30 @@ export function CartPage() {
     if (idempotencyKey) void checkout(idempotencyKey);
   };
 
+  const onRazorpayVerified = async (orderId: number, fields: RazorpayVerifyFields) => {
+    setPhase('submitting');
+    setError(null);
+    try {
+      const res = await shopApi.verifyRazorpayPayment(orderId, fields);
+      setResult(res);
+      setPhase('success');
+      clear();
+    } catch (err) {
+      setError(err as ApiError);
+      setPhase('error');
+    }
+  };
+
+  const onRazorpayCancelled = (orderId: number) => {
+    void shopApi.cancelRazorpayPayment(orderId);
+    setPhase('cancelled');
+  };
+
+  const onRazorpayError = (err: ApiError) => {
+    setError(err);
+    setPhase('error');
+  };
+
   if (phase === 'success' && result) {
     return (
       <PageShell title="Cart" background="dotted">
@@ -131,24 +160,58 @@ export function CartPage() {
           </div>
           <p className={styles.estimateNote}>The server works out the final price and any member discount when you pay.</p>
 
-          <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={busy} />
-
-          {phase === 'error' && error && <ErrorBox error={error} onRetry={isRetryablePaymentError(error) ? retry : undefined} />}
           {phase === 'pending' && (
             <p className={styles.pendingNote} role="status">
               <strong>Payment pending.</strong> The gateway has not confirmed it, so no stock is held and nothing was charged. You can pay
               again.
             </p>
           )}
+          {phase === 'cancelled' && (
+            <p className={styles.pendingNote} role="status">
+              <strong>Payment cancelled.</strong> No stock was held and nothing was charged.
+            </p>
+          )}
 
-          <div className={styles.actions}>
-            <button type="button" className={styles.button} onClick={onPay} disabled={busy}>
-              {busy ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
-            </button>
-            <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={() => setAtPayment(false)} disabled={busy}>
-              Back to Cart
-            </button>
-          </div>
+          {gateway === 'razorpay' ? (
+            <>
+              {phase === 'error' && error && <ErrorBox error={razorpayErrorMessage(error)} />}
+              <div className={styles.actions}>
+                <RazorpayPayButton
+                  amountPaise={estimatedSubtotal}
+                  disabled={busy}
+                  createOrder={() => {
+                    const key = crypto.randomUUID();
+                    setIdempotencyKey(key);
+                    return shopApi.createRazorpayOrder(
+                      items.map((i) => ({ productSize: i.productSizeId, quantity: i.quantity })),
+                      key,
+                    );
+                  }}
+                  onVerified={onRazorpayVerified}
+                  onCancelled={onRazorpayCancelled}
+                  onError={onRazorpayError}
+                />
+                <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={() => setAtPayment(false)} disabled={busy}>
+                  Back to Cart
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={busy} />
+
+              {phase === 'error' && error && <ErrorBox error={error} onRetry={isRetryablePaymentError(error) ? retry : undefined} />}
+
+              <div className={styles.actions}>
+                <button type="button" className={styles.button} onClick={onPay} disabled={busy}>
+                  {busy ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
+                </button>
+                <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={() => setAtPayment(false)} disabled={busy}>
+                  Back to Cart
+                </button>
+              </div>
+            </>
+          )}
         </Panel>
       </PageShell>
     );

@@ -12,9 +12,17 @@ import {
   updateMockProduct,
 } from './mockProductsStore';
 import type { PlaceOrderRequest, PlaceOrderResult, Product, ProductDraft, RestockRequest, ShopOrder, ShopOrderLine, ShopPayment } from './types';
+import type { RazorpayOrderInfo } from '../payments/types';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const PAGE_SIZE = 20;
+
+/** See the matching function in features/membership/api.mock.ts — mock
+ * mode's payments config always reports gateway: 'mock', so this is never
+ * actually reachable. */
+function razorpayNotAvailableInMock(): never {
+  throw new ApiRequestError({ code: 'not_implemented', message: 'Razorpay is not available in mock mode.' });
+}
 
 interface IdempotencyRecord {
   userEmail: string;
@@ -192,6 +200,18 @@ export const mockShopApi = {
     });
 
     return result;
+  },
+
+  async createRazorpayOrder(): Promise<RazorpayOrderInfo> {
+    razorpayNotAvailableInMock();
+  },
+
+  async verifyRazorpayPayment(): Promise<PlaceOrderResult> {
+    razorpayNotAvailableInMock();
+  },
+
+  async cancelRazorpayPayment(): Promise<void> {
+    razorpayNotAvailableInMock();
   },
 };
 

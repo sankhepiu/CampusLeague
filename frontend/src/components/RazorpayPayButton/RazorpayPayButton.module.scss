@@ -1,0 +1,41 @@
+@use '../../styles/mixins';
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.badge {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--cl-tint-gold);
+  border: 2px solid var(--cl-color-primary);
+  color: var(--cl-color-primary);
+}
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--cl-color-primary-dark);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

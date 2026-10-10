@@ -1,5 +1,6 @@
 import { request, requestWithStatus, type Paginated } from '../../api/client';
 import type { MyMembership, Order, Payment, Plan, MembershipRecord, PurchaseRequest, PurchaseResult } from './types';
+import type { RazorpayOrderInfo, RazorpayVerifyFields } from '../payments/types';
 
 interface WirePlan {
   id: number;
@@ -56,6 +57,30 @@ interface WireMyMembership {
   membership: WireMembership | null;
   paid_until: string | null;
   member_qr_token: string | null;
+}
+
+interface WireRazorpayOrderInfo {
+  order_id: number;
+  razorpay_order_id: string;
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  prefill: { name: string; email: string };
+}
+
+function fromWireRazorpayOrderInfo(r: WireRazorpayOrderInfo): RazorpayOrderInfo {
+  return {
+    orderId: r.order_id,
+    razorpayOrderId: r.razorpay_order_id,
+    key: r.key,
+    amount: r.amount,
+    currency: r.currency,
+    name: r.name,
+    description: r.description,
+    prefill: r.prefill,
+  };
 }
 
 function fromWirePlan(p: WirePlan): Plan {
@@ -120,5 +145,43 @@ export const realMembershipApi = {
       paidUntil: result.paid_until,
       memberQrToken: result.member_qr_token,
     };
+  },
+
+  // GAP: the Razorpay endpoints below aren't in docs/API_CONTRACT.md yet —
+  // built against the exact shape the demo-polish brief gave: /order takes
+  // a purpose + Idempotency-Key and returns what Checkout needs to open;
+  // /verify takes our own order_id plus the three razorpay_* fields and
+  // returns the same body as a mock-gateway purchase; /cancel just takes
+  // our order_id.
+  async createRazorpayOrder(planId: number, idempotencyKey: string): Promise<RazorpayOrderInfo> {
+    return fromWireRazorpayOrderInfo(
+      await request<WireRazorpayOrderInfo>('/payments/razorpay/order', {
+        method: 'POST',
+        body: { purpose: 'membership', plan: planId },
+        headers: { 'Idempotency-Key': idempotencyKey },
+      }),
+    );
+  },
+
+  async verifyRazorpayPayment(orderId: number, fields: RazorpayVerifyFields): Promise<PurchaseResult> {
+    const result = await request<WirePurchaseResult>('/payments/razorpay/verify', {
+      method: 'POST',
+      body: {
+        order_id: orderId,
+        razorpay_order_id: fields.razorpayOrderId,
+        razorpay_payment_id: fields.razorpayPaymentId,
+        razorpay_signature: fields.razorpaySignature,
+      },
+    });
+    return {
+      order: fromWireOrder(result.order),
+      payment: result.payment ? fromWirePayment(result.payment) : null,
+      membership: result.membership ? fromWireMembership(result.membership) : null,
+      replayed: false,
+    };
+  },
+
+  async cancelRazorpayPayment(orderId: number): Promise<void> {
+    await request('/payments/razorpay/cancel', { method: 'POST', body: { order_id: orderId } });
   },
 };

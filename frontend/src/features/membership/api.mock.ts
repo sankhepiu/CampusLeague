@@ -3,6 +3,15 @@ import { getCurrentMockUser, updateUser } from '../auth/mockUsers';
 import { addMockOrder } from '../orders/mockOrdersStore';
 import { addDays, addMonths, today } from './dates';
 import type { MembershipRecord, MyMembership, Order, Payment, Plan, PurchaseRequest, PurchaseResult } from './types';
+import type { RazorpayOrderInfo } from '../payments/types';
+
+/** Mock mode's payments config always reports gateway: 'mock' (see
+ * features/payments/api.mock.ts), so these three are never actually
+ * reachable — they exist only so mockMembershipApi has the same shape as
+ * realMembershipApi for the env.useMockApi switch in api.ts to type-check. */
+function razorpayNotAvailableInMock(): never {
+  throw new ApiRequestError({ code: 'not_implemented', message: 'Razorpay is not available in mock mode.' });
+}
 
 /** Same two plans the contract's own GET /plans example uses, so numbers
  * line up when the real endpoint lands. */
@@ -213,5 +222,17 @@ export const mockMembershipApi = {
     updateUser(user.email, { membershipStatus: 'active' });
 
     return result;
+  },
+
+  async createRazorpayOrder(): Promise<RazorpayOrderInfo> {
+    razorpayNotAvailableInMock();
+  },
+
+  async verifyRazorpayPayment(): Promise<PurchaseResult> {
+    razorpayNotAvailableInMock();
+  },
+
+  async cancelRazorpayPayment(): Promise<void> {
+    razorpayNotAvailableInMock();
   },
 };

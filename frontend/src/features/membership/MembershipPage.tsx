@@ -9,21 +9,26 @@ import { Money } from '../../components/Money/Money';
 import { QRCode } from '../../components/QRCode/QRCode';
 import { ReplayNote, TestPayment } from '../../components/TestPayment/TestPayment';
 import { isRetryablePaymentError } from '../../components/TestPayment/paymentErrors';
+import { RazorpayPayButton } from '../../components/RazorpayPayButton/RazorpayPayButton';
 import type { ApiError } from '../../api/client';
 import { useAsync } from '../../core/hooks/useAsync';
+import { usePaymentsConfig } from '../../core/hooks/usePaymentsConfig';
 import { accentVarForFeature } from '../../core/config/accents';
 import { membershipApi } from './api';
+import { razorpayErrorMessage } from '../payments/errors';
+import type { RazorpayVerifyFields } from '../payments/types';
 import { formatDate, daysUntil } from './dates';
 import type { PaymentTestOutcome, Plan, PurchaseResult } from './types';
 import styles from './MembershipPage.module.scss';
 
 const RENEWAL_WINDOW_DAYS = 30;
 
-type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error';
+type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error' | 'cancelled';
 
 export function MembershipPage() {
   const plansState = useAsync(() => membershipApi.listPlans(), []);
   const myMembership = useAsync(() => membershipApi.getMyMembership(), []);
+  const { gateway } = usePaymentsConfig();
 
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [testOutcome, setTestOutcome] = useState<PaymentTestOutcome>('success');
@@ -66,6 +71,30 @@ export function MembershipPage() {
   };
 
   const retry = () => void confirmPurchase();
+
+  const onRazorpayVerified = async (orderId: number, fields: RazorpayVerifyFields) => {
+    setPhase('submitting');
+    setError(null);
+    try {
+      const purchaseResult = await membershipApi.verifyRazorpayPayment(orderId, fields);
+      setResult(purchaseResult);
+      setPhase('success');
+      myMembership.reload();
+    } catch (err) {
+      setPhase('error');
+      setError(err as ApiError);
+    }
+  };
+
+  const onRazorpayCancelled = (orderId: number) => {
+    void membershipApi.cancelRazorpayPayment(orderId);
+    setPhase('cancelled');
+  };
+
+  const onRazorpayError = (err: ApiError) => {
+    setPhase('error');
+    setError(err);
+  };
 
   const status = myMembership.data?.status;
   const current = myMembership.data?.membership;
@@ -178,6 +207,15 @@ export function MembershipPage() {
                 Close
               </button>
             </div>
+          ) : phase === 'cancelled' ? (
+            <div className={styles.successBox}>
+              <p>
+                <strong>Payment cancelled.</strong> Nothing was charged.
+              </p>
+              <button type="button" className={`${styles.button} ${styles.buttonSecondary}`} onClick={closeCheckout}>
+                Close
+              </button>
+            </div>
           ) : (
             <>
               <div className={styles.checkoutRow}>
@@ -187,23 +225,49 @@ export function MembershipPage() {
                 <Money paise={selectedPlan.price} />
               </div>
 
-              <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={phase === 'submitting'} />
+              {gateway === 'razorpay' ? (
+                <>
+                  {phase === 'error' && error && <ErrorBox error={razorpayErrorMessage(error)} />}
+                  <div className={styles.checkoutActions}>
+                    <RazorpayPayButton
+                      amountPaise={selectedPlan.price}
+                      disabled={phase === 'submitting'}
+                      createOrder={() => membershipApi.createRazorpayOrder(selectedPlan.id, idempotencyKey!)}
+                      onVerified={onRazorpayVerified}
+                      onCancelled={onRazorpayCancelled}
+                      onError={onRazorpayError}
+                    />
+                    <button
+                      type="button"
+                      className={`${styles.button} ${styles.buttonSecondary}`}
+                      onClick={closeCheckout}
+                      disabled={phase === 'submitting'}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={phase === 'submitting'} />
 
-              {phase === 'error' && error && <ErrorBox error={error} onRetry={isRetryablePaymentError(error) ? retry : undefined} />}
+                  {phase === 'error' && error && <ErrorBox error={error} onRetry={isRetryablePaymentError(error) ? retry : undefined} />}
 
-              <div className={styles.checkoutActions}>
-                <button type="button" className={styles.button} onClick={() => void confirmPurchase()} disabled={phase === 'submitting'}>
-                  {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.button} ${styles.buttonSecondary}`}
-                  onClick={closeCheckout}
-                  disabled={phase === 'submitting'}
-                >
-                  Cancel
-                </button>
-              </div>
+                  <div className={styles.checkoutActions}>
+                    <button type="button" className={styles.button} onClick={() => void confirmPurchase()} disabled={phase === 'submitting'}>
+                      {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.button} ${styles.buttonSecondary}`}
+                      onClick={closeCheckout}
+                      disabled={phase === 'submitting'}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </Panel>
