@@ -18,6 +18,57 @@ const APPROVAL_ROLES = ['president', 'treasurer'];
  * the Phase 4 report), not something the real backend would have. */
 const objectUrls = new Map<number, string>();
 
+// A tiny inline placeholder image so seeded receipts actually open to
+// something, instead of a dead link — real submissions use a genuine
+// object URL from the uploaded file (see objectUrls below).
+const SEED_RECEIPT = 'data:image/svg+xml;base64,' + btoa(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"><rect width="300" height="400" fill="#fff"/>' +
+    '<text x="20" y="40" font-family="monospace" font-size="18">RECEIPT (seed demo data)</text>' +
+    '<text x="20" y="80" font-family="monospace" font-size="14">No real file was uploaded for this</text>' +
+    '<text x="20" y="100" font-family="monospace" font-size="14">pre-seeded reimbursement.</text></svg>',
+);
+
+/** Two already-decided reimbursements so the finance ledger (Phase 5) has a
+ * real expense to show and drill into from a fresh browser profile — one
+ * paid and event-tagged (so GET /events/1/pnl has expenses to report, and
+ * the Coin Trail reaches a receipt), one approved-but-unpaid so `payable`
+ * isn't zero. Matches the contract's own ledger example amount/description
+ * ("Expense approved: Venue deposit", 500000) and its summary example's
+ * payable figure (135000) exactly, where that was easy to do. */
+function seedExpenses(): MockExpense[] {
+  const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+  return [
+    {
+      id: 1,
+      requesterId: 6,
+      requesterName: 'Eva Events',
+      amount: 500000,
+      category: 'event',
+      event: 1,
+      fundraiser: null,
+      description: 'Venue deposit',
+      receiptUrl: SEED_RECEIPT,
+      status: 'paid',
+      createdAt: daysAgo(18),
+      approval: { decision: 'approved', reason: null, decidedAt: daysAgo(17), approver: { id: 5, name: 'Tom Treasurer' } },
+    },
+    {
+      id: 2,
+      requesterId: 6,
+      requesterName: 'Eva Events',
+      amount: 135000,
+      category: 'general',
+      event: null,
+      fundraiser: null,
+      description: 'Printing and signage for spring recruitment',
+      receiptUrl: SEED_RECEIPT,
+      status: 'approved',
+      createdAt: daysAgo(6),
+      approval: { decision: 'approved', reason: null, decidedAt: daysAgo(5), approver: { id: 4, name: 'Pia President' } },
+    },
+  ];
+}
+
 function loadStore(): MockExpense[] {
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -25,7 +76,9 @@ function loadStore(): MockExpense[] {
   } catch {
     /* storage unavailable or corrupt */
   }
-  return [];
+  const seeded = seedExpenses();
+  saveStore(seeded);
+  return seeded;
 }
 
 function saveStore(items: MockExpense[]): void {
@@ -163,3 +216,13 @@ export const mockExpenses = {
 };
 
 export { toPublic as toPublicExpense };
+
+/** Unguarded read of every expense, decided or not — for internal reuse by
+ * OTHER already-permissioned mock engines (the finance ledger, and
+ * GET /events/{id}/pnl, open to event managers too) that need the raw data
+ * without re-running GET /expenses's own "president or treasurer" check,
+ * which would otherwise wrongly block an event manager's P&L view. Not a
+ * stand-in for `mockExpenses.listAll()`, which is that real endpoint. */
+export function listAllExpensesForLedger(): MockExpense[] {
+  return loadStore();
+}

@@ -9,6 +9,10 @@ export interface DataTableColumn<T> {
   key: string;
   header: string;
   render: (row: T) => ReactNode;
+  /** Right-aligns the header and every cell in this column — for dense
+   * money/figure tables (finance), where right-aligned columns read faster
+   * than left-aligned ones. Defaults to left. */
+  align?: 'left' | 'right';
 }
 
 interface DataTableProps<T> {
@@ -57,8 +61,8 @@ export function DataTable<T>({ columns, rows, rowKey, isLoading, error, onRetry,
       <table className={styles.table}>
         <thead>
           <tr>
-            {columns.map((col) => (
-              <th key={col.key} scope="col">
+            {columns.map((col, i) => (
+              <th key={col.key} scope="col" className={i === 0 ? styles.sticky : undefined} style={col.align === 'right' ? { textAlign: 'right' } : undefined}>
                 {col.header}
               </th>
             ))}
@@ -67,8 +71,10 @@ export function DataTable<T>({ columns, rows, rowKey, isLoading, error, onRetry,
         <tbody>
           {rows.map((row) => (
             <tr key={rowKey(row)}>
-              {columns.map((col) => (
-                <td key={col.key}>{col.render(row)}</td>
+              {columns.map((col, i) => (
+                <td key={col.key} className={i === 0 ? styles.sticky : undefined} style={col.align === 'right' ? { textAlign: 'right' } : undefined}>
+                  {col.render(row)}
+                </td>
               ))}
             </tr>
           ))}

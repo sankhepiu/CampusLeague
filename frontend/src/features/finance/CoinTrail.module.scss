@@ -1,0 +1,216 @@
+@use '../../styles/mixins';
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1040;
+  background: var(--cl-overlay);
+}
+
+.panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1041;
+  background: var(--cl-color-panel);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+@media (min-width: 1024px) {
+  .panel {
+    inset: 0 0 0 auto;
+    width: 30rem;
+    max-width: 90vw;
+    border-left: 4px solid var(--cl-color-border);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  background: var(--cl-color-panel);
+  border-bottom: 3px solid var(--cl-color-border);
+  padding: 1rem 1.25rem;
+  z-index: 1;
+}
+
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.crumbButton {
+  @include mixins.focus-ring;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--cl-color-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.crumbCurrent {
+  color: var(--cl-color-text-muted);
+}
+
+.crumbSep {
+  color: var(--cl-color-text-muted);
+}
+
+.closeButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  position: absolute;
+  top: 0.9rem;
+  right: 1rem;
+  background: var(--cl-color-bg-raised);
+  border: 2px solid var(--cl-color-border);
+  color: var(--cl-color-text);
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+  font-family: var(--cl-font-pixel);
+}
+
+.figureTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.75rem;
+  margin: 0 0 0.25rem;
+}
+
+.figureTotal {
+  font-size: 1.4rem;
+}
+
+.body {
+  padding: 1.25rem;
+  flex: 1;
+}
+
+.cappedNote {
+  color: var(--cl-color-text-muted);
+  font-size: 0.8rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.entryList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.entryRow {
+  @include mixins.focus-ring;
+  @include mixins.pixel-border;
+  @include mixins.depth-flat;
+  width: 100%;
+  text-align: left;
+  background: var(--cl-color-bg-raised);
+  border-color: var(--cl-color-border);
+  padding: 0.7rem 0.9rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  font: inherit;
+  color: var(--cl-color-text);
+}
+
+.entryMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.entryDescription {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryDate {
+  font-size: 0.75rem;
+  color: var(--cl-color-text-muted);
+}
+
+.entryAmount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.positive {
+  color: var(--cl-color-success);
+}
+
+.negative {
+  color: var(--cl-color-danger);
+}
+
+.linesTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.linesTable th,
+.linesTable td {
+  text-align: right;
+  padding: 0.5rem 0.4rem;
+  border-bottom: 2px solid var(--cl-color-bg-raised);
+}
+
+.linesTable th:first-child,
+.linesTable td:first-child {
+  text-align: left;
+}
+
+.sourceSection {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 3px dashed var(--cl-color-border);
+}
+
+.sourceLabel {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  color: var(--cl-color-text-muted);
+  margin: 0 0 0.75rem;
+}
+
+.ticketTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.ticketTable th,
+.ticketTable td {
+  text-align: left;
+  padding: 0.4rem;
+  border-bottom: 1px solid var(--cl-color-bg-raised);
+  white-space: nowrap;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--cl-color-bg-raised);
+  font-size: 0.9rem;
+}
+
+.receiptLink {
+  display: inline-block;
+  margin-top: 0.5rem;
+}
