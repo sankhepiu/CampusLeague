@@ -145,6 +145,22 @@ terminal in development. To retry any that failed (up to 3 attempts each):
 python manage.py send_announcements
 ```
 
+## Payments: mock or Razorpay (test mode)
+
+`PAYMENT_GATEWAY=mock` (the default) needs nothing else. For Razorpay's test
+mode, put these in `backend/.env` only, never in a committed file:
+
+```
+PAYMENT_GATEWAY=razorpay
+RAZORPAY_KEY_ID=...        # a test key, starting rzp_test_
+RAZORPAY_KEY_SECRET=...
+```
+
+If either key is blank the server logs a warning and uses the mock. The mock
+endpoints stay open in both modes, so do not use live keys with this build.
+There are no webhooks and no automatic refunds yet; see "Razorpay payments"
+in `docs/API_CONTRACT.md`.
+
 ## The ledger is append-only
 
 `finance_ledgerentry`, `finance_ledgerline` and `audit_auditlog` rows cannot be
@@ -162,3 +178,6 @@ local test purchases, reset the whole local database:
   database was first created. `docker compose down -v` deletes the local
   database (all local data is lost); then start it again and re-run `migrate`.
 - **Port 5433 already in use**: change `POSTGRES_PORT` in `.env`.
+- **`502 gateway_unavailable` with `CERTIFICATE_VERIFY_FAILED` in the log**:
+  this Python has no CA certificates and `/etc/ssl/cert.pem` does not exist.
+  Start the server with `SSL_CERT_FILE` pointing at a CA bundle.

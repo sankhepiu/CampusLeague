@@ -74,7 +74,18 @@ def process_payment(order, outcome, idempotency_key):
         order.save(update_fields=['status', 'updated_at'])
         return None
 
-    gateway_ref = f'mock_{uuid.uuid4().hex}'
+    return fulfil_paid_order(order, gateway_ref=f'mock_{uuid.uuid4().hex}', idempotency_key=idempotency_key)
+
+
+def fulfil_paid_order(order, *, gateway_ref, idempotency_key):
+    """The one success path, shared by the mock and Razorpay gateways: the
+    Payment row, the order marked paid, the thing bought, the ledger entry.
+
+    Must run inside the caller's transaction, so that if any step fails
+    (SoldOut, OutOfStock, a database check) none of them is saved.
+    """
+    if order.status != Order.Status.PENDING:
+        raise ValueError(f'Order {order.pk} is {order.status}; only a pending order can be paid.')
     payment = Payment.objects.create(
         order=order,
         amount=order.total,
@@ -85,7 +96,11 @@ def process_payment(order, outcome, idempotency_key):
     order.payment_ref = gateway_ref
     order.save(update_fields=['status', 'payment_ref', 'updated_at'])
 
-    lines = list(order.lines.select_related('order__buyer', 'plan', 'tier__event', 'product_size__product'))
+    # In id order, so two orders for the same sizes take their stock rows in
+    # the same order and cannot deadlock.
+    lines = list(
+        order.lines.select_related('order__buyer', 'plan', 'tier__event', 'product_size__product').order_by('id')
+    )
     for line in lines:
         _fulfil(line, payment)
 
@@ -162,6 +177,20 @@ def _replay(user, idempotency_key, same_purchase):
     return _result(order, payment, lines, replayed=True)
 
 
+def create_order(user, line_fields, **order_fields):
+    """A pending order with its lines. Amounts come from the lines, which
+    the server priced; nothing here is taken from the client.
+    """
+    subtotal = sum(fields['qty'] * fields['unit_price'] for fields in line_fields)
+    discount = sum(fields.get('discount', 0) for fields in line_fields)
+    order = Order.objects.create(
+        buyer=user, subtotal=subtotal, discount=discount, total=subtotal - discount, **order_fields,
+    )
+    for fields in line_fields:
+        OrderLine.objects.create(order=order, **fields)
+    return order
+
+
 def _purchase(*, user, idempotency_key, outcome, same_purchase, build_lines):
     """Shared purchase skeleton: lock, replay check, order, payment.
 
@@ -185,14 +214,13 @@ def _purchase(*, user, idempotency_key, outcome, same_purchase, build_lines):
             if replay is not None:
                 return replay
 
-            line_fields = build_lines()
-            subtotal = sum(fields['qty'] * fields['unit_price'] for fields in line_fields)
-            discount = sum(fields.get('discount', 0) for fields in line_fields)
-            order = Order.objects.create(
-                buyer=user, subtotal=subtotal, discount=discount, total=subtotal - discount,
-            )
-            for fields in line_fields:
-                OrderLine.objects.create(order=order, **fields)
+            if Order.objects.filter(idempotency_key=idempotency_key).exists():
+                # The key belongs to a Razorpay checkout. Its Payment row
+                # will be written with this key when that payment is
+                # verified, so it cannot also pay for this purchase.
+                raise IdempotencyConflict()
+
+            order = create_order(user, build_lines())
             payment = process_payment(order, outcome, idempotency_key)
             return _result(order, payment, list(order.lines.select_related('membership__plan')))
     except IntegrityError:
@@ -214,16 +242,27 @@ def _single_line(**wanted):
     return same_purchase
 
 
-def purchase_membership(*, user, plan, outcome, idempotency_key):
-    """Buy or renew a plan: order, payment, membership and ledger entry.
+# What is being bought ------------------------------------------------------
+#
+# Each *_basket function describes one purchase as {same_purchase,
+# build_lines}: the replay matcher and the function that validates the sale
+# and prices its lines. Both gateways use the same basket, so the sales
+# window, stock, seats and prices are checked by the same code whichever
+# way the buyer pays.
 
-    The price comes from the plan row; nothing the client sends affects it.
-    """
+def membership_basket(*, user, plan):
+    """The price comes from the plan row; nothing the client sends affects it."""
     kind = OrderLine.Kind.MEMBERSHIP
+    return {
+        'same_purchase': _single_line(kind=kind, plan_id=plan.pk),
+        'build_lines': lambda: [{'kind': kind, 'plan': plan, 'qty': 1, 'unit_price': plan.price}],
+    }
+
+
+def purchase_membership(*, user, plan, outcome, idempotency_key):
+    """Buy or renew a plan: order, payment, membership and ledger entry."""
     return _purchase(
-        user=user, idempotency_key=idempotency_key, outcome=outcome,
-        same_purchase=_single_line(kind=kind, plan_id=plan.pk),
-        build_lines=lambda: [{'kind': kind, 'plan': plan, 'qty': 1, 'unit_price': plan.price}],
+        user=user, idempotency_key=idempotency_key, outcome=outcome, **membership_basket(user=user, plan=plan),
     )
 
 
@@ -234,8 +273,8 @@ def ticket_price(tier, user):
     return tier.member_price if membership_status(user) == 'active' else tier.public_price
 
 
-def purchase_tickets(*, user, tier_id, quantity, outcome, idempotency_key):
-    """Buy seats in one tier: order, payment, tickets and ledger entry.
+def tickets_basket(*, user, tier_id, quantity):
+    """Seats in one tier.
 
     Plan, overselling seats: "In one transaction: lock the ticket tier row,
     check sold_count < capacity, create tickets, increment sold_count."
@@ -263,10 +302,17 @@ def purchase_tickets(*, user, tier_id, quantity, outcome, idempotency_key):
             raise SoldOut()
         return [{'kind': kind, 'tier': tier, 'qty': quantity, 'unit_price': ticket_price(tier, user)}]
 
+    return {
+        'same_purchase': _single_line(kind=kind, tier_id=tier_id, qty=quantity),
+        'build_lines': build_lines,
+    }
+
+
+def purchase_tickets(*, user, tier_id, quantity, outcome, idempotency_key):
+    """Buy seats in one tier: order, payment, tickets and ledger entry."""
     return _purchase(
         user=user, idempotency_key=idempotency_key, outcome=outcome,
-        same_purchase=_single_line(kind=kind, tier_id=tier_id, qty=quantity),
-        build_lines=build_lines,
+        **tickets_basket(user=user, tier_id=tier_id, quantity=quantity),
     )
 
 
@@ -290,12 +336,9 @@ class ProductUnavailable(Exception):
     """A requested size does not exist or its product is not active."""
 
 
-def purchase_merch(*, user, items, outcome, idempotency_key):
-    """Buy merchandise: order with one line per size, payment, stock
-    decrement with StockMovements, and one ledger entry for the order.
-
-    items is {product_size_id: quantity}. Raises OutOfStock or
-    ProductUnavailable before anything is written.
+def merch_basket(*, user, items):
+    """Merchandise, one line per size. items is {product_size_id: quantity}.
+    Raises OutOfStock or ProductUnavailable before anything is written.
     """
     kind = OrderLine.Kind.MERCH
     wanted = sorted(items.items())
@@ -330,7 +373,13 @@ def purchase_merch(*, user, items, outcome, idempotency_key):
             })
         return lines
 
+    return {'same_purchase': same_purchase, 'build_lines': build_lines}
+
+
+def purchase_merch(*, user, items, outcome, idempotency_key):
+    """Buy merchandise: order, payment, stock decrement with
+    StockMovements, and one ledger entry for the order.
+    """
     return _purchase(
-        user=user, idempotency_key=idempotency_key, outcome=outcome,
-        same_purchase=same_purchase, build_lines=build_lines,
+        user=user, idempotency_key=idempotency_key, outcome=outcome, **merch_basket(user=user, items=items),
     )
