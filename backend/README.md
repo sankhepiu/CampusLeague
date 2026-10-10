@@ -50,9 +50,11 @@ docker compose stop                # stop the database, keep its data
 After pulling new code, run `pip install -r requirements.txt` and
 `python manage.py migrate` again.
 
-## Admin and roles
+## Admin: roles and plans
 
-Until the roles endpoint exists, roles are assigned in the Django admin.
+Until the roles endpoint and the seed script exist, roles are assigned and
+membership plans are created in the Django admin. Prices are in paise
+(Rs 500 = 50000).
 
 ```bash
 python manage.py createsuperuser   # asks for email, name, college ID, password
@@ -60,6 +62,14 @@ python manage.py createsuperuser   # asks for email, name, college ID, password
 
 Then open http://127.0.0.1:8000/admin/ and add a **Role assignment** for a
 user. A role is current while today is between its term start and term end.
+
+## The ledger is append-only
+
+`finance_ledgerentry` and `finance_ledgerline` rows cannot be updated or
+deleted, even from the admin or a database shell: PostgreSQL triggers refuse
+it. Mistakes are corrected with a reversal entry, never by editing. To clear
+local test purchases, reset the whole local database:
+`docker compose down -v`, then start it and run `migrate` again.
 
 ## Troubleshooting
 
