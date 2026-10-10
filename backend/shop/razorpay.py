@@ -41,6 +41,7 @@ from django.db import IntegrityError, transaction
 from audit import services as audit
 from events.tickets import SoldOut
 
+from .coupons import CouponLimitReached
 from .models import Order, Payment
 from .payments import IdempotencyConflict, _result, create_order, fulfil_paid_order
 from .stock import OutOfStock
@@ -86,6 +87,11 @@ class OrderAlreadyPaid(Exception):
 
 class SoldOutAfterPayment(Exception):
     """Paid, but the seats or stock were gone. Flagged for refund."""
+
+
+class CouponGoneAfterPayment(Exception):
+    """Paid at the coupon's price, but the coupon was used up meanwhile.
+    Flagged for refund."""
 
 
 def active_gateway():
@@ -175,7 +181,7 @@ def signature_is_valid(razorpay_order_id, razorpay_payment_id, signature):
 
 # Step 1: start a checkout --------------------------------------------------
 
-def start_checkout(*, user, idempotency_key, same_purchase, build_lines):
+def start_checkout(*, user, idempotency_key, same_purchase, build_lines, coupon=''):
     """Create (or find) the buyer's pending order and its Razorpay order.
 
     Returns (order, created). created is False when this key had already
@@ -189,7 +195,7 @@ def start_checkout(*, user, idempotency_key, same_purchase, build_lines):
         with transaction.atomic():
             # Same first lock as the mock purchase: one at a time per buyer.
             User.objects.select_for_update().get(pk=user.pk)
-            order, created = _pending_order(user, idempotency_key, same_purchase, build_lines)
+            order, created = _pending_order(user, idempotency_key, same_purchase, build_lines, coupon)
     except IntegrityError:
         # Another user started a checkout with this key at the same moment.
         raise IdempotencyConflict()
@@ -213,7 +219,7 @@ def start_checkout(*, user, idempotency_key, same_purchase, build_lines):
     return order, created
 
 
-def _pending_order(user, idempotency_key, same_purchase, build_lines):
+def _pending_order(user, idempotency_key, same_purchase, build_lines, coupon):
     if Payment.objects.filter(idempotency_key=idempotency_key).exists():
         raise IdempotencyConflict()
     existing = Order.objects.filter(idempotency_key=idempotency_key).first()
@@ -228,7 +234,7 @@ def _pending_order(user, idempotency_key, same_purchase, build_lines):
             raise IdempotencyConflict()
         return existing, False
 
-    order = create_order(user, build_lines(), idempotency_key=idempotency_key)
+    order = create_order(user, build_lines(), coupon_code=coupon, idempotency_key=idempotency_key)
     if order.total < MIN_AMOUNT:
         raise AmountTooSmall()  # rolls the order back
     return order, True
@@ -275,7 +281,8 @@ def verify_payment(*, user, order_id, razorpay_order_id, razorpay_payment_id, si
                     raise OrderAlreadyPaid()
                 return _result(order, payment, list(order.lines.select_related('membership__plan')), replayed=True)
             if order.needs_refund:
-                raise SoldOutAfterPayment()
+                # Flagged by an earlier call; give the same answer again.
+                raise REFUND_ERRORS[_refund_reason(order)]()
             if order.status == Order.Status.CANCELLED:
                 # The buyer closed the checkout, yet Razorpay proves they
                 # paid (the two events can race). They paid, so deliver.
@@ -288,11 +295,28 @@ def verify_payment(*, user, order_id, razorpay_order_id, razorpay_payment_id, si
     except (SoldOut, OutOfStock):
         # The transaction above was rolled back in full: no payment row, no
         # tickets, no stock taken, no ledger entry.
-        _flag_for_refund(user, order_id, razorpay_payment_id)
+        _flag_for_refund(user, order_id, razorpay_payment_id, 'sold_out')
         raise SoldOutAfterPayment()
+    except CouponLimitReached:
+        _flag_for_refund(user, order_id, razorpay_payment_id, 'coupon_limit_reached')
+        raise CouponGoneAfterPayment()
 
 
-def _flag_for_refund(user, order_id, razorpay_payment_id):
+REFUND_ERRORS = {'sold_out': SoldOutAfterPayment, 'coupon_limit_reached': CouponGoneAfterPayment}
+
+
+def _refund_reason(order):
+    """Why an order was flagged, read back from its audit row."""
+    from audit.models import AuditLog
+
+    log = AuditLog.objects.filter(
+        action='order.refund_due', object_type='shop.order', object_id=order.pk,
+    ).order_by('-id').first()
+    reason = (log.after or {}).get('reason') if log else None
+    return reason if reason in REFUND_ERRORS else 'sold_out'
+
+
+def _flag_for_refund(user, order_id, razorpay_payment_id, reason):
     with transaction.atomic():
         order = _locked_order(user, order_id)
         if order.status == Order.Status.PAID or order.needs_refund:
@@ -305,7 +329,7 @@ def _flag_for_refund(user, order_id, razorpay_payment_id):
         audit.record(
             actor=user, action='order.refund_due', obj=order, before=before,
             after={
-                'status': order.status, 'needs_refund': True, 'reason': 'sold_out',
+                'status': order.status, 'needs_refund': True, 'reason': reason,
                 'amount': order.total, 'razorpay_order_id': order.razorpay_order_id,
                 'razorpay_payment_id': razorpay_payment_id,
             },

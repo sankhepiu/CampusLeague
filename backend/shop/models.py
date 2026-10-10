@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models.functions import Upper
 
 from common.models import TimeStampedModel
 
@@ -36,6 +37,11 @@ class Order(TimeStampedModel):
     # The buyer was charged but nothing could be delivered (sold out between
     # checkout and payment). Someone has to refund payment_ref by hand.
     needs_refund = models.BooleanField(default=False)
+    # ADDITION (beyond the plan): the coupon used, and how much of
+    # `discount` came from it. `discount` stays the total of every discount
+    # (sale, member and coupon), so total = subtotal - discount still holds.
+    coupon = models.ForeignKey('shop.Coupon', null=True, blank=True, on_delete=models.PROTECT, related_name='orders')
+    coupon_discount = models.BigIntegerField(default=0)
 
     class Meta:
         constraints = [
@@ -65,6 +71,14 @@ class Order(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(needs_refund=False) | models.Q(status='cancelled'),
                 name='order_needs_refund_only_when_cancelled',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(coupon_discount__gte=0, coupon_discount__lte=models.F('discount')),
+                name='order_coupon_discount_within_discount',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(coupon__isnull=False) | models.Q(coupon_discount=0),
+                name='order_coupon_discount_needs_coupon',
             ),
         ]
 
@@ -102,6 +116,8 @@ class OrderLine(TimeStampedModel):
     # the revenue at the amount actually paid, and keep the discount on the
     # order line for reporting." Total discount for the line, in paise.
     discount = models.BigIntegerField(default=0)
+    # The part of `discount` that came from the order's coupon.
+    coupon_discount = models.BigIntegerField(default=0)
     # ADDITION to the plan's field list: the membership this line paid for.
     # Needed so an idempotent replay can return the first result, and so the
     # ledger can later be traced from payment to membership. One-to-one: a
@@ -131,6 +147,10 @@ class OrderLine(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(discount__gte=0, discount__lte=models.F('qty') * models.F('unit_price')),
                 name='order_line_discount_within_line_total',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(coupon_discount__gte=0, coupon_discount__lte=models.F('discount')),
+                name='order_line_coupon_discount_within_discount',
             ),
         ]
 
@@ -181,9 +201,15 @@ class Product(TimeStampedModel):
     active. Hoodie, T-shirt."
     """
 
+    class Category(models.TextChoices):
+        APPAREL = 'apparel'
+        ACCESSORIES = 'accessories'
+        STATIONERY = 'stationery'
+        DRINKWARE = 'drinkware'
+
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    # Paise, before any member discount.
+    # Paise, before any sale or member discount.
     base_price = models.BigIntegerField()
     # Plan: "image". A file under media/products/. FileField, not
     # ImageField, so no image-processing dependency is needed.
@@ -191,12 +217,21 @@ class Product(TimeStampedModel):
     # seed.
     image = models.FileField(upload_to='products/', max_length=200, blank=True)
     active = models.BooleanField(default=True)
+    # ADDITIONS (beyond the plan's field list).
+    category = models.CharField(max_length=12, choices=Category.choices, default=Category.APPAREL)
+    # Percent off base_price for everyone, before any member discount.
+    sale_pct = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
         ordering = ['name', 'id']
         constraints = [
             # ASSUMPTION: no free merchandise, as with plans and tickets.
             models.CheckConstraint(condition=models.Q(base_price__gt=0), name='product_base_price_positive'),
+            models.CheckConstraint(condition=models.Q(sale_pct__lte=90), name='product_sale_pct_max_90'),
+            models.CheckConstraint(
+                condition=models.Q(category__in=['apparel', 'accessories', 'stationery', 'drinkware']),
+                name='product_category_is_known',
+            ),
         ]
 
     def __str__(self):
@@ -216,9 +251,12 @@ class ProductSize(TimeStampedModel):
         M = 'M'
         L = 'L'
         XL = 'XL'
+        # ADDITION: for products that do not come in sizes (a mug, a pin).
+        # Such a product has exactly this one row, which holds its stock.
+        ONE = 'ONE'
 
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='sizes')
-    size = models.CharField(max_length=2, choices=Size.choices)
+    size = models.CharField(max_length=3, choices=Size.choices)
     stock = models.IntegerField(default=0)
 
     class Meta:
@@ -226,7 +264,9 @@ class ProductSize(TimeStampedModel):
             # The last line of defence against overselling: PostgreSQL
             # refuses any write that would take stock below zero.
             models.CheckConstraint(condition=models.Q(stock__gte=0), name='product_size_stock_not_negative'),
-            models.CheckConstraint(condition=models.Q(size__in=['S', 'M', 'L', 'XL']), name='product_size_is_known'),
+            models.CheckConstraint(
+                condition=models.Q(size__in=['S', 'M', 'L', 'XL', 'ONE']), name='product_size_is_known',
+            ),
             models.UniqueConstraint(fields=['product', 'size'], name='product_size_unique_per_product'),
         ]
 
@@ -270,3 +310,100 @@ class StockMovement(TimeStampedModel):
 
     def __str__(self):
         return f'{self.product_size} {self.delta:+d} ({self.reason})'
+
+
+class Coupon(TimeStampedModel):
+    """ASSUMPTION (beyond the plan): a discount code. Kept in its own table
+    so it can later belong to a club.
+
+    All amounts are paise. `value` is a percentage for kind "percent" and an
+    amount for kind "flat".
+    """
+
+    class Kind(models.TextChoices):
+        PERCENT = 'percent'
+        FLAT = 'flat'
+
+    class AppliesTo(models.TextChoices):
+        ALL = 'all'
+        MERCH = 'merch'
+        TICKETS = 'tickets'
+        MEMBERSHIP = 'membership'
+
+    # Always stored in upper case (the CHECK below enforces it), which with
+    # UNIQUE makes codes case-insensitive: welcome10 and WELCOME10 are one.
+    code = models.CharField(max_length=20, unique=True)
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    value = models.BigIntegerField()
+    # The order must come to at least this much (after sale and member
+    # discounts) for the coupon to apply.
+    min_order = models.BigIntegerField(default=0)
+    # The most this coupon can take off; empty means no cap.
+    max_discount = models.BigIntegerField(null=True, blank=True)
+    # Empty means no limit on that side.
+    valid_from = models.DateTimeField(null=True, blank=True)
+    valid_to = models.DateTimeField(null=True, blank=True)
+    # Paid orders in total, and per user. Empty usage_limit means unlimited.
+    usage_limit = models.PositiveIntegerField(null=True, blank=True)
+    per_user_limit = models.PositiveIntegerField(default=1)
+    applies_to = models.CharField(max_length=12, choices=AppliesTo.choices, default=AppliesTo.ALL)
+    active = models.BooleanField(default=True)
+    # Paid orders so far. Changed only in shop.coupons.redeem, under a row
+    # lock, in the same transaction as the payment.
+    used_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['code']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(code=Upper('code')), name='coupon_code_is_upper_case'),
+            models.CheckConstraint(condition=models.Q(kind__in=['percent', 'flat']), name='coupon_kind_is_known'),
+            models.CheckConstraint(
+                condition=models.Q(applies_to__in=['all', 'merch', 'tickets', 'membership']),
+                name='coupon_applies_to_is_known',
+            ),
+            models.CheckConstraint(condition=models.Q(value__gte=1), name='coupon_value_positive'),
+            models.CheckConstraint(
+                condition=~models.Q(kind='percent') | models.Q(value__lte=100), name='coupon_percent_max_100',
+            ),
+            models.CheckConstraint(condition=models.Q(min_order__gte=0), name='coupon_min_order_not_negative'),
+            models.CheckConstraint(
+                condition=models.Q(max_discount__isnull=True) | models.Q(max_discount__gte=1),
+                name='coupon_max_discount_positive',
+            ),
+            models.CheckConstraint(condition=models.Q(per_user_limit__gte=1), name='coupon_per_user_limit_positive'),
+            models.CheckConstraint(
+                condition=models.Q(usage_limit__isnull=True) | models.Q(usage_limit__gte=1),
+                name='coupon_usage_limit_positive',
+            ),
+            # The last line of defence against over-use: PostgreSQL refuses
+            # a redemption that would take the count past the limit.
+            models.CheckConstraint(
+                condition=models.Q(usage_limit__isnull=True) | models.Q(used_count__lte=models.F('usage_limit')),
+                name='coupon_used_not_over_limit',
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(valid_from__isnull=True) | models.Q(valid_to__isnull=True)
+                    | models.Q(valid_to__gt=models.F('valid_from'))
+                ),
+                name='coupon_valid_to_after_valid_from',
+            ),
+        ]
+
+    def __str__(self):
+        return self.code
+
+
+class CouponRedemption(TimeStampedModel):
+    """One paid order that used a coupon. Written only when the payment
+    succeeds; a failed, pending or abandoned order leaves no row.
+    """
+
+    coupon = models.ForeignKey(Coupon, on_delete=models.PROTECT, related_name='redemptions')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    # One-to-one: an order can redeem its coupon once.
+    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name='coupon_redemption')
+    discount = models.BigIntegerField()
+
+    def __str__(self):
+        return f'{self.coupon} on order #{self.order_id}'

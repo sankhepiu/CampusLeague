@@ -13,13 +13,14 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from events.models import Event, Ticket, TicketTier
+from events.models import Ticket, TicketTier
 from events.tickets import SoldOut, issue_tickets
 from finance.models import LedgerEntry
 from finance.services import post_entry
 from members.models import Membership
 from members.services import current_membership, membership_status, start_membership
 
+from . import coupons
 from .models import Order, OrderLine, Payment, ProductSize
 from .stock import OutOfStock, take_stock
 
@@ -103,6 +104,9 @@ def fulfil_paid_order(order, *, gateway_ref, idempotency_key):
     )
     for line in lines:
         _fulfil(line, payment)
+    # Counted only now that the payment exists. Last, so the coupon row is
+    # always locked after the tier and stock rows.
+    coupons.redeem(order)
 
     # Plan posting rule: merch order paid -> debit Cash, credit Merchandise
     # revenue, source reference "Order": one entry for the whole order, at
@@ -177,10 +181,16 @@ def _replay(user, idempotency_key, same_purchase):
     return _result(order, payment, lines, replayed=True)
 
 
-def create_order(user, line_fields, **order_fields):
+def create_order(user, line_fields, coupon_code='', **order_fields):
     """A pending order with its lines. Amounts come from the lines, which
     the server priced; nothing here is taken from the client.
+
+    coupon_code, if given, is checked and applied to the lines first
+    (raises coupons.CouponInvalid).
     """
+    coupon, coupon_discount = coupons.apply(coupon_code, user, line_fields)
+    if coupon:
+        order_fields.update(coupon=coupon, coupon_discount=coupon_discount)
     subtotal = sum(fields['qty'] * fields['unit_price'] for fields in line_fields)
     discount = sum(fields.get('discount', 0) for fields in line_fields)
     order = Order.objects.create(
@@ -191,7 +201,7 @@ def create_order(user, line_fields, **order_fields):
     return order
 
 
-def _purchase(*, user, idempotency_key, outcome, same_purchase, build_lines):
+def _purchase(*, user, idempotency_key, outcome, same_purchase, build_lines, coupon=''):
     """Shared purchase skeleton: lock, replay check, order, payment.
 
     build_lines() runs inside the transaction after the buyer is locked. It
@@ -220,7 +230,7 @@ def _purchase(*, user, idempotency_key, outcome, same_purchase, build_lines):
                 # verified, so it cannot also pay for this purchase.
                 raise IdempotencyConflict()
 
-            order = create_order(user, build_lines())
+            order = create_order(user, build_lines(), coupon_code=coupon)
             payment = process_payment(order, outcome, idempotency_key)
             return _result(order, payment, list(order.lines.select_related('membership__plan')))
     except IntegrityError:
@@ -259,10 +269,11 @@ def membership_basket(*, user, plan):
     }
 
 
-def purchase_membership(*, user, plan, outcome, idempotency_key):
+def purchase_membership(*, user, plan, outcome, idempotency_key, coupon=''):
     """Buy or renew a plan: order, payment, membership and ledger entry."""
     return _purchase(
-        user=user, idempotency_key=idempotency_key, outcome=outcome, **membership_basket(user=user, plan=plan),
+        user=user, idempotency_key=idempotency_key, outcome=outcome, coupon=coupon,
+        **membership_basket(user=user, plan=plan),
     )
 
 
@@ -289,12 +300,7 @@ def tickets_basket(*, user, tier_id, quantity):
         # Lock order is always buyer, then tier, so two purchases cannot
         # deadlock each other.
         tier = TicketTier.objects.select_for_update(of=('self',)).select_related('event').get(pk=tier_id)
-        now = timezone.now()
-        if (
-            tier.event.status != Event.Status.ON_SALE
-            or (tier.sale_opens and now < tier.sale_opens)
-            or (tier.sale_closes and now >= tier.sale_closes)
-        ):
+        if not tier.sale_is_open(timezone.now()):
             raise SalesClosed()
         # Seats are only taken on success, but a sold-out tier is refused
         # for every outcome so no pointless order is created.
@@ -308,10 +314,10 @@ def tickets_basket(*, user, tier_id, quantity):
     }
 
 
-def purchase_tickets(*, user, tier_id, quantity, outcome, idempotency_key):
+def purchase_tickets(*, user, tier_id, quantity, outcome, idempotency_key, coupon=''):
     """Buy seats in one tier: order, payment, tickets and ledger entry."""
     return _purchase(
-        user=user, idempotency_key=idempotency_key, outcome=outcome,
+        user=user, idempotency_key=idempotency_key, outcome=outcome, coupon=coupon,
         **tickets_basket(user=user, tier_id=tier_id, quantity=quantity),
     )
 
@@ -324,12 +330,21 @@ def merch_discount_pct(user):
     return membership.plan.merch_discount_pct if membership else 0
 
 
-def merch_line_discount(base_price, quantity, pct):
-    """Discount for one line, in whole paise.
-    ASSUMPTION (plan is silent on rounding): rounded down, so a fraction of
-    a paisa is never given away.
+def merch_line_discount(base_price, quantity, pct, sale_pct=0):
+    """Discount for one line, in whole paise: the sale first, then the
+    member discount on what is left (team decision on the order).
+    ASSUMPTION (plan is silent on rounding): each step is rounded down, so
+    a fraction of a paisa is never given away.
     """
-    return base_price * quantity * pct // 100
+    gross = base_price * quantity
+    sale = gross * sale_pct // 100
+    return sale + (gross - sale) * pct // 100
+
+
+def merch_unit_price(product, pct):
+    """What one item costs this buyer now: base price, less the sale, less
+    their member discount."""
+    return product.base_price - merch_line_discount(product.base_price, 1, pct, product.sale_pct)
 
 
 class ProductUnavailable(Exception):
@@ -369,17 +384,18 @@ def merch_basket(*, user, items):
             price = size.product.base_price
             lines.append({
                 'kind': kind, 'product_size': size, 'qty': quantity, 'unit_price': price,
-                'discount': merch_line_discount(price, quantity, pct),
+                'discount': merch_line_discount(price, quantity, pct, size.product.sale_pct),
             })
         return lines
 
     return {'same_purchase': same_purchase, 'build_lines': build_lines}
 
 
-def purchase_merch(*, user, items, outcome, idempotency_key):
+def purchase_merch(*, user, items, outcome, idempotency_key, coupon=''):
     """Buy merchandise: order, payment, stock decrement with
     StockMovements, and one ledger entry for the order.
     """
     return _purchase(
-        user=user, idempotency_key=idempotency_key, outcome=outcome, **merch_basket(user=user, items=items),
+        user=user, idempotency_key=idempotency_key, outcome=outcome, coupon=coupon,
+        **merch_basket(user=user, items=items),
     )

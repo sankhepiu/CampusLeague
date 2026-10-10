@@ -237,7 +237,8 @@ class TraceTests(FinanceTestCase):
         self.assertEqual(merch['details']['order'], merch_order.id)
         self.assertEqual(merch['details']['order'], merch['id'])
         self.assertEqual(merch['details']['items'], [
-            {'product': 'Hoodie', 'size': 'M', 'qty': 1, 'unit_price': 120000, 'discount': 12000, 'paid': 108000},
+            {'product': 'Hoodie', 'size': 'M', 'qty': 1, 'unit_price': 120000, 'discount': 12000,
+             'coupon_discount': 0, 'paid': 108000},
         ])
         sale = self.trace('account:4300')['entries'][0]['source']
         self.assertEqual((sale['type'], sale['details']['amount']), ('fundraiser_sale', 30000))

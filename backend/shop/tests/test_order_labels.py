@@ -74,7 +74,9 @@ class OrderLineLabelTests(ApiTestCase):
         merch, ticket, membership = self.my_lines()
 
         for line in (merch, ticket, membership):
-            self.assertEqual(set(line), {'id', 'kind', 'label', 'plan', 'tier', 'product_size', 'qty', 'unit_price', 'discount'})
+            self.assertEqual(set(line), {
+            'id', 'kind', 'label', 'plan', 'tier', 'product_size', 'qty', 'unit_price', 'discount', 'coupon_discount',
+        })
         self.assertEqual((membership['plan'], membership['tier'], membership['product_size']), (self.plan.id, None, None))
         self.assertEqual((ticket['plan'], ticket['tier'], ticket['product_size']), (None, self.tier.id, None))
         self.assertEqual((merch['plan'], merch['tier'], merch['product_size']), (None, None, size_of(self.hoodie, 'M').pk))

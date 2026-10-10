@@ -161,6 +161,10 @@ def reconcile():
 
 # Coin Trail --------------------------------------------------------------
 
+def _coupon_code(order):
+    return order.coupon.code if order.coupon_id else None
+
+
 def _source(entry):
     """The record behind a ledger entry, as {type, id, label, details}."""
     from shop.models import Order, OrderLine, Payment
@@ -176,6 +180,8 @@ def _source(entry):
         return {**base, 'label': f'{payment.order.buyer.name} paid dues for {line.plan.name}', 'details': {
             'order': payment.order_id, 'member': payment.order.buyer.name, 'plan': line.plan.name,
             'membership': line.membership_id, 'amount': payment.amount,
+            'list_price': line.qty * line.unit_price, 'discount': line.discount,
+            'coupon': _coupon_code(payment.order), 'coupon_discount': line.coupon_discount,
         }}
     if kind == 'order_line':
         line = OrderLine.objects.select_related('order__buyer', 'tier__event').get(pk=source_id)
@@ -188,16 +194,22 @@ def _source(entry):
             for ticket in Ticket.objects.filter(order=line.order, tier=line.tier).select_related('owner', 'checkin')
         ]
         return {**base, 'label': f'{line.order.buyer.name} bought {line.qty} x {line.tier.name} for {line.tier.event.title}',
-                'details': {'order': line.order_id, 'buyer': line.order.buyer.name, 'tickets': tickets}}
+                'details': {
+                    'order': line.order_id, 'buyer': line.order.buyer.name, 'tickets': tickets,
+                    'list_price': line.qty * line.unit_price, 'discount': line.discount, 'paid': line.amount,
+                    'coupon': _coupon_code(line.order), 'coupon_discount': line.coupon_discount,
+                }}
     if kind == 'order':
         order = Order.objects.select_related('buyer').get(pk=source_id)
         items = [
             {'product': line.product_size.product.name, 'size': line.product_size.size, 'qty': line.qty,
-             'unit_price': line.unit_price, 'discount': line.discount, 'paid': line.amount}
+             'unit_price': line.unit_price, 'discount': line.discount,
+             'coupon_discount': line.coupon_discount, 'paid': line.amount}
             for line in order.lines.filter(kind='merch').select_related('product_size__product')
         ]
         return {**base, 'label': f'{order.buyer.name} ordered merchandise', 'details': {
             'order': order.pk, 'buyer': order.buyer.name, 'items': items,
+            'discount': order.discount, 'coupon': _coupon_code(order), 'coupon_discount': order.coupon_discount,
         }}
     if kind == 'expense_request':
         expense = ExpenseRequest.objects.select_related('requester').get(pk=source_id)

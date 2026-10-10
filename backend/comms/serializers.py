@@ -1,6 +1,10 @@
 from rest_framework import serializers
 
+from common.validation import MAX_TITLE
+
 from . import services
+
+MAX_ANNOUNCEMENT_BODY = 5000
 from .models import Announcement, AnnouncementDelivery
 
 
@@ -23,6 +27,10 @@ class AnnouncementSerializer(serializers.ModelSerializer):
 
 
 class AnnouncementWriteSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(max_length=MAX_TITLE, min_length=3)
+    # ASSUMPTION: an announcement is a notice, not an essay.
+    body = serializers.CharField(max_length=MAX_ANNOUNCEMENT_BODY, min_length=3)
+
     class Meta:
         model = Announcement
         # author and published_at are set by the server.

@@ -129,7 +129,10 @@ class SignupTests(ApiTestCase):
             SIGNUP, signup_body(name='x' * 151, college_id='y' * 51), format='json',
         )
         body = self.assert_error(response, 400, 'validation_error', field='name')
-        self.assertEqual(self.field_codes(body), {('name', 'max_length'), ('college_id', 'max_length')})
+        # college_id is now capped at 20 and must match the id format.
+        self.assertEqual(self.field_codes(body), {
+            ('name', 'max_length'), ('college_id', 'max_length'), ('college_id', 'invalid_college_id'),
+        })
 
     def test_name_at_maximum_length_is_accepted(self):
         response = self.client.post(SIGNUP, signup_body(name='x' * 150), format='json')

@@ -50,3 +50,4 @@ class MembershipPurchaseSerializer(serializers.Serializer):
     # demo both success and failure."
     # ASSUMPTION: the flag is this field, defaulting to success.
     test_outcome = serializers.ChoiceField(choices=OUTCOMES, default=SUCCESS)
+    coupon = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')

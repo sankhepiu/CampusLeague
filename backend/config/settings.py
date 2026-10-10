@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 import os
 import re
+import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -252,5 +253,9 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or 'Campus League <no-
 PAYMENT_GATEWAY = (os.environ.get('PAYMENT_GATEWAY') or 'mock').strip().lower()
 if PAYMENT_GATEWAY not in ('mock', 'razorpay'):
     raise ImproperlyConfigured(f'PAYMENT_GATEWAY={PAYMENT_GATEWAY!r} is not valid. Use "mock" or "razorpay".')
+if len(sys.argv) > 1 and sys.argv[1] == 'test':
+    # The test suite must not depend on what a developer's .env selects.
+    # Tests that exercise Razorpay switch it on themselves, with fake keys.
+    PAYMENT_GATEWAY = 'mock'
 RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '').strip()
 RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '').strip()

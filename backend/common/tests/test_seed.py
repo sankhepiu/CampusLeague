@@ -1,6 +1,6 @@
 from django.contrib.auth import authenticate, get_user_model
 from django.core.management import CommandError, call_command
-from django.db.models import F, Sum
+from django.db.models import Count, F, Sum
 from django.test import TransactionTestCase, override_settings
 
 import os
@@ -14,7 +14,8 @@ from django.utils import timezone
 from audit.models import AuditLog
 from comms.models import Announcement
 from common import seed
-from events.models import CheckIn, Event, Ticket, TicketTier
+from accounts.models import RoleInvite
+from events.models import CheckIn, Event, Ticket, TicketPass, TicketTier
 from finance import reports
 from finance.models import ExpenseRequest, LedgerAccount, LedgerEntry, LedgerLine
 from finance.tests.helpers import TempMediaMixin
@@ -26,7 +27,7 @@ from members.services import membership_status
 from shop import stock
 from volunteering.models import Fundraiser
 from volunteering.services import progress
-from shop.models import Order, OrderLine, Payment, Product
+from shop.models import Coupon, Order, OrderLine, Payment, Product
 
 User = get_user_model()
 
@@ -43,6 +44,8 @@ def snapshot():
         'checkins': CheckIn.objects.count(), 'orders': Order.objects.count(),
         'payments': Payment.objects.count(), 'entries': LedgerEntry.objects.count(),
         'products': Product.objects.count(), 'announcements': Announcement.objects.count(),
+        'passes': TicketPass.objects.count(), 'coupons': Coupon.objects.count(),
+        'invites': RoleInvite.objects.count(),
         'cash': account_balance('1000'),
     }
 
@@ -120,7 +123,7 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         self.assertFalse(LedgerEntry.objects.filter(kind='ticket_sale', event__isnull=True).exists())
         self.assertFalse(LedgerEntry.objects.filter(kind='membership_dues', event__isnull=False).exists())
 
-    def test_shop_has_two_products_with_one_size_nearly_sold_out(self):
+    def test_shop_stock_levels_with_one_size_nearly_sold_out(self):
         stock_levels = {
             product.name: {size.size: size.stock for size in product.sizes.all()}
             for product in Product.objects.all()
@@ -128,10 +131,58 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         self.assertEqual(stock_levels, {
             'Skyline Hoodie': {'S': 8, 'M': 5, 'L': 6, 'XL': 1},
             'Skyline T-Shirt': {'S': 15, 'M': 16, 'L': 13, 'XL': 10},
+            # The eight products without sizes: one row each, nothing sold.
+            'Skyline Cap': {'ONE': 25}, 'Canvas Tote': {'ONE': 30}, 'Sticker Pack': {'ONE': 60},
+            'Campus Mug': {'ONE': 20}, 'Ruled Notebook': {'ONE': 40}, 'Club Lanyard': {'ONE': 50},
+            'Enamel Pin': {'ONE': 45}, 'Water Bottle': {'ONE': 18},
         })
         self.assertEqual(stock.stock_mismatches(), [])
-        # Every restock was audited.
-        self.assertEqual(AuditLog.objects.filter(action='stock.restocked').count(), 8)
+        # Every restock was audited: 8 clothing sizes + 8 one-size products.
+        self.assertEqual(AuditLog.objects.filter(action='stock.restocked').count(), 16)
+
+    def test_shop_has_ten_products_in_categories_with_two_on_sale(self):
+        self.assertEqual(Product.objects.count(), 10)
+        self.assertEqual(
+            dict(Product.objects.exclude(sale_pct=0).values_list('name', 'sale_pct')),
+            {'Skyline Cap': 20, 'Campus Mug': 15},
+        )
+        self.assertEqual(
+            sorted(set(Product.objects.values_list('category', flat=True))),
+            ['accessories', 'apparel', 'drinkware', 'stationery'],
+        )
+
+    def test_three_coupons_none_used_yet(self):
+        coupons = {
+            coupon.code: (coupon.kind, coupon.value, coupon.applies_to, coupon.min_order, coupon.max_discount,
+                          coupon.usage_limit, coupon.used_count)
+            for coupon in Coupon.objects.all()
+        }
+        self.assertEqual(coupons, {
+            'WELCOME10': ('percent', 10, 'membership', 0, None, None, 0),
+            'GALA50': ('flat', 5000, 'tickets', 20000, None, None, 0),
+            'MERCH20': ('percent', 20, 'merch', 0, 15000, 5, 0),
+        })
+
+    def test_one_group_pass_of_ten_with_three_admitted(self):
+        group = TicketPass.objects.annotate(size=Count('tickets')).get(size=10)
+        self.assertEqual(group.owner.email, 'member01@skyline.test')
+        self.assertEqual(group.event.title, 'Board Games Meetup')
+        statuses = sorted(group.tickets.values_list('status', flat=True))
+        self.assertEqual(statuses, ['checked_in'] * 3 + ['valid'] * 7)
+        self.assertEqual(CheckIn.objects.filter(ticket__ticket_pass=group).count(), 3)
+        # Every ticket in the seed belongs to a pass, and every other pass
+        # is a single ticket.
+        self.assertFalse(Ticket.objects.filter(ticket_pass__isnull=True).exists())
+        self.assertEqual(TicketPass.objects.count(), Ticket.objects.count() - 9)
+
+    def test_one_role_invite_is_waiting_and_grants_nothing_yet(self):
+        invite = RoleInvite.objects.get()
+        self.assertEqual(
+            (invite.user.email, invite.role, invite.status, invite.invited_by.email),
+            ('member05@skyline.test', 'event_manager', 'pending', 'president@skyline.test'),
+        )
+        self.assertEqual(invite.user.current_roles(), [])
+        self.assertGreater(invite.expires_at, timezone.now() + timedelta(hours=71))
 
     def test_two_past_announcements_with_delivery_logs(self):
         announcements = list(Announcement.objects.all())
@@ -211,11 +262,12 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         # 1 of 4 tasks done.
         self.assertEqual(components['volunteering']['score'], 25)
         # Cash in: dues 2,650,000 (40 members + 5 role accounts) + tickets
-        # 2,820,000 + merch 1,328,000 (1,148,000 + 5 T-shirts at 36,000) +
-        # bake sale 740,000 = 7,538,000 paise. Cash out: payouts of 250,000 +
-        # 80,000 + 500,000 = 830,000. 7,538,000 / 8,368,000 = 90.1 -> 90.
+        # 2,870,000 (2,820,000 + the group of ten at the member price of
+        # 5,000) + merch 1,328,000 (1,148,000 + 5 T-shirts at 36,000) +
+        # bake sale 740,000 = 7,588,000 paise. Cash out: payouts of 250,000 +
+        # 80,000 + 500,000 = 830,000. 7,588,000 / 8,418,000 = 90.1 -> 90.
         self.assertEqual(components['money']['score'], 90)
-        self.assertIn('Rs 75,380.00 came in and Rs 8,300.00 went out', components['money']['reason'])
+        self.assertIn('Rs 75,880.00 came in and Rs 8,300.00 went out', components['money']['reason'])
         # (64*30 + 86*25 + 25*20 + 90*25) / 100 = 68.2 -> 68.
         self.assertEqual(result['score'], 68)
         self.assertEqual(
@@ -245,6 +297,10 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         images = {product.name: product.image.name for product in Product.objects.all()}
         self.assertEqual(images, {
             'Skyline Hoodie': 'products/skyline-hoodie.png', 'Skyline T-Shirt': 'products/skyline-t-shirt.png',
+            'Skyline Cap': 'products/skyline-cap.png', 'Canvas Tote': 'products/canvas-tote.png',
+            'Sticker Pack': 'products/sticker-pack.png', 'Campus Mug': 'products/campus-mug.png',
+            'Ruled Notebook': 'products/ruled-notebook.png', 'Club Lanyard': 'products/club-lanyard.png',
+            'Enamel Pin': 'products/enamel-pin.png', 'Water Bottle': 'products/water-bottle.png',
         })
         contents = []
         for product in Product.objects.all():
@@ -260,12 +316,14 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
                 self.assertEqual(struct.unpack('>I', data[position + 8 + length:position + 12 + length])[0], zlib.crc32(body))
                 position += 12 + length
             contents.append(data)
-        self.assertNotEqual(contents[0], contents[1])           # two distinct pictures
+        self.assertEqual(len(set(contents)), 10)                # ten distinct pictures
 
     def test_reseeding_keeps_the_same_image_file_names(self):
         run('--reset')
         self.assertEqual(sorted(os.listdir(os.path.join(settings.MEDIA_ROOT, 'products'))),
-                         ['skyline-hoodie.png', 'skyline-t-shirt.png'])
+                         ['campus-mug.png', 'canvas-tote.png', 'club-lanyard.png', 'enamel-pin.png',
+                          'ruled-notebook.png', 'skyline-cap.png', 'skyline-hoodie.png', 'skyline-t-shirt.png',
+                          'sticker-pack.png', 'water-bottle.png'])
 
     def test_refuses_to_seed_twice_without_reset(self):
         before = snapshot()
@@ -284,9 +342,10 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         # The marker written before the reset is gone; the only audit rows
         # are the ones the seed itself writes.
         self.assertFalse(AuditLog.objects.filter(action='test.marker').exists())
-        self.assertEqual(AuditLog.objects.filter(action='stock.restocked').count(), 8)
-        # ...plus 5 approvals, 3 payouts, 1 rejection and 1 save file.
-        self.assertEqual(AuditLog.objects.count(), 8 + 9 + 1)
+        self.assertEqual(AuditLog.objects.filter(action='stock.restocked').count(), 16)
+        # ...plus 5 approvals, 3 payouts, 1 rejection, 1 save file and 1
+        # role invite.
+        self.assertEqual(AuditLog.objects.count(), 16 + 9 + 1 + 1)
         self.assertEqual(LedgerAccount.objects.count(), 9)     # chart of accounts kept
         self.assertEqual(Event.objects.order_by('id').first().id, 1)   # ids restart
 

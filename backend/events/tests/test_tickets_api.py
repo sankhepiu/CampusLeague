@@ -137,8 +137,11 @@ class PurchaseTests(TicketTestCase):
 
         mine = self.client.get('/api/tickets/me').json()
 
+        # One pass per purchase; the ticket itself is listed inside it.
         self.assertEqual(mine['count'], 1)
-        self.assertEqual(mine['results'][0]['code'], Ticket.objects.get(owner=other).code)
+        self.assertEqual(
+            [ticket['code'] for ticket in mine['results'][0]['tickets']], [Ticket.objects.get(owner=other).code],
+        )
         self.client.credentials()
         self.assert_error(self.client.get('/api/tickets/me'), 401, 'not_authenticated')
 

@@ -1,10 +1,13 @@
 from django.db.models import Sum
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail
 
+from common.validation import MAX_AMOUNT, MAX_CAPACITY, MAX_DESCRIPTION, MAX_TITLE
 from shop.payments import OUTCOMES, SUCCESS
 
-from .models import Event, Ticket, TicketTier
+from . import tickets as ticket_services
+from .models import Event, Ticket, TicketPass, TicketTier
 
 # ASSUMPTION (plan is silent): at most this many tickets in one purchase.
 MAX_TICKETS_PER_ORDER = 10
@@ -19,14 +22,21 @@ class TierSerializer(serializers.ModelSerializer):
 
     price = serializers.SerializerMethodField()
     seats_left = serializers.IntegerField(read_only=True)
+    sold = serializers.IntegerField(source='sold_count', read_only=True)
+    # Buyable right now as far as dates and event status go. A sold-out
+    # tier is still "open": check seats_left as well.
+    sale_open = serializers.SerializerMethodField()
 
     class Meta:
         model = TicketTier
         fields = [
             'id', 'name', 'public_price', 'member_price', 'price',
-            'capacity', 'seats_left', 'sale_opens', 'sale_closes',
+            'capacity', 'sold', 'seats_left', 'sale_opens', 'sale_closes', 'sale_open',
         ]
         read_only_fields = fields
+
+    def get_sale_open(self, tier):
+        return tier.sale_is_open(timezone.now())
 
     def get_price(self, tier):
         # is_member is worked out once per request by the view, from the
@@ -47,8 +57,11 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 class EventWriteSerializer(serializers.ModelSerializer):
-    capacity_total = serializers.IntegerField(min_value=1)
-    budget_amount = serializers.IntegerField(min_value=0, required=False)
+    title = serializers.CharField(max_length=MAX_TITLE)
+    description = serializers.CharField(max_length=MAX_DESCRIPTION, allow_blank=True, required=False)
+    venue = serializers.CharField(max_length=MAX_TITLE)
+    capacity_total = serializers.IntegerField(min_value=1, max_value=MAX_CAPACITY)
+    budget_amount = serializers.IntegerField(min_value=0, max_value=MAX_AMOUNT, required=False)
 
     class Meta:
         model = Event
@@ -65,6 +78,22 @@ class EventWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {'ends_at': error('The event must end after it starts.', 'ends_before_start')}
             )
+        # ASSUMPTION: an event cannot be created in the past, or moved into
+        # it. An existing event whose start is not being changed is left
+        # alone, so a past event can still be closed or have a typo fixed.
+        moved = 'starts_at' in attrs and (event is None or attrs['starts_at'] != event.starts_at)
+        if moved and attrs['starts_at'] <= timezone.now():
+            raise serializers.ValidationError(
+                {'starts_at': error('The event must start in the future.', 'starts_in_past')}
+            )
+        if event and ends:
+            # Sales cannot run past the end of the event (see the tier rule).
+            late = event.tiers.filter(sale_closes__gt=ends).first() or event.tiers.filter(sale_opens__gte=ends).first()
+            if late:
+                raise serializers.ValidationError({'ends_at': error(
+                    f'The sale window of tier "{late.name}" would run past the end of the event.',
+                    'before_sale_window',
+                )})
         if event and 'capacity_total' in attrs:
             allocated = event.tiers.aggregate(total=Sum('capacity', default=0))['total']
             if attrs['capacity_total'] < allocated:
@@ -75,9 +104,10 @@ class EventWriteSerializer(serializers.ModelSerializer):
 
 
 class TierWriteSerializer(serializers.ModelSerializer):
-    public_price = serializers.IntegerField(min_value=1)
-    member_price = serializers.IntegerField(min_value=1)
-    capacity = serializers.IntegerField(min_value=1)
+    name = serializers.CharField(max_length=100)
+    public_price = serializers.IntegerField(min_value=1, max_value=MAX_AMOUNT)
+    member_price = serializers.IntegerField(min_value=1, max_value=MAX_AMOUNT)
+    capacity = serializers.IntegerField(min_value=1, max_value=MAX_CAPACITY)
 
     class Meta:
         model = TicketTier
@@ -91,6 +121,16 @@ class TierWriteSerializer(serializers.ModelSerializer):
         if opens and closes and closes <= opens:
             raise serializers.ValidationError(
                 {'sale_closes': error('Sales must close after they open.', 'closes_before_opens')}
+            )
+        # ASSUMPTION: the sale window lies inside the event: tickets cannot
+        # go on sale, or stay on sale, once the event is over.
+        if closes and closes > event.ends_at:
+            raise serializers.ValidationError(
+                {'sale_closes': error('Sales cannot close after the event has ended.', 'outside_event')}
+            )
+        if opens and opens >= event.ends_at:
+            raise serializers.ValidationError(
+                {'sale_opens': error('Sales cannot open after the event has ended.', 'outside_event')}
             )
         if event.tiers.filter(name=attrs['name']).exists():
             raise serializers.ValidationError(
@@ -111,6 +151,63 @@ class TicketPurchaseSerializer(serializers.Serializer):
     tier = serializers.IntegerField(min_value=1)
     quantity = serializers.IntegerField(min_value=1, max_value=MAX_TICKETS_PER_ORDER, default=1)
     test_outcome = serializers.ChoiceField(choices=OUTCOMES, default=SUCCESS)
+    coupon = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+
+
+class PassSerializer(serializers.ModelSerializer):
+    """A group pass: one QR code for the tickets bought together.
+
+    Reads pass.tickets.all(), so views that list passes prefetch it.
+    """
+
+    pass_id = serializers.IntegerField(source='id', read_only=True)
+    event = serializers.SerializerMethodField()
+    tier = serializers.SerializerMethodField()
+    quantity = serializers.SerializerMethodField()
+    admitted = serializers.SerializerMethodField()
+    remaining = serializers.SerializerMethodField()
+    tickets = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TicketPass
+        fields = [
+            'pass_id', 'event', 'tier', 'quantity', 'admitted', 'remaining', 'qr_token', 'tickets', 'created_at',
+        ]
+        read_only_fields = fields
+
+    def _counts(self, ticket_pass):
+        return ticket_services.pass_counts(ticket_pass.tickets.all())
+
+    def get_event(self, ticket_pass):
+        event = ticket_pass.event
+        # "name" and "title" are the same value: the event object elsewhere
+        # in this API calls it title.
+        return {
+            'id': event.id, 'name': event.title, 'title': event.title,
+            'starts_at': event.starts_at, 'venue': event.venue,
+        }
+
+    def get_tier(self, ticket_pass):
+        return {'id': ticket_pass.tier_id, 'name': ticket_pass.tier.name}
+
+    def get_quantity(self, ticket_pass):
+        return self._counts(ticket_pass)[0]
+
+    def get_admitted(self, ticket_pass):
+        return self._counts(ticket_pass)[1]
+
+    def get_remaining(self, ticket_pass):
+        total, admitted = self._counts(ticket_pass)
+        return total - admitted
+
+    def get_tickets(self, ticket_pass):
+        tickets = sorted(ticket_pass.tickets.all(), key=lambda ticket: ticket.id)
+        return [{'id': ticket.id, 'code': ticket.code, 'status': ticket.status} for ticket in tickets]
+
+
+def passes_for(queryset):
+    """A TicketPass queryset with everything PassSerializer reads."""
+    return queryset.select_related('event', 'tier').prefetch_related('tickets')
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -136,14 +233,19 @@ class CheckInRequestSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
     # A member card instead of a ticket: reports membership only.
     member_token = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    # A group pass. (A pass token sent as `token` is recognised as well, so
+    # a scanner need not know which kind of QR code it has read.)
+    pass_token = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    # Group passes only: how many people to admit with this scan.
+    count = serializers.IntegerField(min_value=1, max_value=MAX_TICKETS_PER_ORDER, required=False, default=1)
     # ASSUMPTION (not in the plan): the scanner may say which event it is
     # working; a ticket for any other event is then reported as invalid.
     event = serializers.IntegerField(min_value=1, required=False, allow_null=True, default=None)
 
     def validate(self, attrs):
-        given = [name for name in ('token', 'code', 'member_token') if attrs[name]]
+        given = [name for name in ('token', 'code', 'member_token', 'pass_token') if attrs[name]]
         if len(given) != 1:
             raise serializers.ValidationError(
-                error('Send exactly one of token, code or member_token.', 'token_or_code_required')
+                error('Send exactly one of token, code, member_token or pass_token.', 'token_or_code_required')
             )
         return attrs

@@ -116,6 +116,68 @@ class RoleAssignment(TimeStampedModel):
         return f'{self.user} {self.role} {self.term_start} to {self.term_end}'
 
 
+class RoleInvite(TimeStampedModel):
+    """ASSUMPTION (beyond the plan): a role is offered, not imposed. The
+    president nominates someone (maker); the role exists only once that
+    person accepts (checker). Until then no RoleAssignment row exists, so
+    the nominee has none of the role's access.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'pending'
+        ACCEPTED = 'accepted'
+        DECLINED = 'declined'
+        REVOKED = 'revoked'
+        EXPIRED = 'expired'
+
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name='role_invites')
+    role = models.CharField(max_length=30, choices=RoleAssignment.Role.choices)
+    invited_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='+')
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    # The term the assignment will have if the invite is accepted.
+    term_start = models.DateField()
+    term_end = models.DateField()
+    # A pending invite past this moment can no longer be accepted.
+    expires_at = models.DateTimeField()
+    # When it was accepted, declined or revoked.
+    responded_at = models.DateTimeField(null=True, blank=True)
+    # Set on acceptance: the assignment this invite produced.
+    assignment = models.OneToOneField(
+        RoleAssignment, null=True, blank=True, on_delete=models.SET_NULL, related_name='invite',
+    )
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=['pending', 'accepted', 'declined', 'revoked', 'expired']),
+                name='role_invite_status_is_known',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(role__in=[
+                    'president', 'treasurer', 'event_manager', 'volunteer_coordinator', 'member',
+                ]),
+                name='role_invite_role_is_known',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(term_end__gte=models.F('term_start')),
+                name='role_invite_term_end_not_before_start',
+            ),
+            # Nobody can invite themselves, whatever the API lets through.
+            models.CheckConstraint(
+                condition=~models.Q(user=models.F('invited_by')), name='role_invite_not_to_self',
+            ),
+            # One open invite per person and role.
+            models.UniqueConstraint(
+                fields=['user', 'role'], condition=models.Q(status='pending'),
+                name='role_invite_one_pending_per_user_and_role',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user} invited as {self.role} ({self.status})'
+
+
 class EmailVerificationCode(TimeStampedModel):
     """The one-time code most recently emailed to a user (ASSUMPTION: beyond
     the plan). One row per user: sending a new code overwrites the old one,
