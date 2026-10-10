@@ -110,6 +110,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'login': throttle_rate('THROTTLE_LOGIN_RATE', '20/min'),
         'signup': throttle_rate('THROTTLE_SIGNUP_RATE', '10/min'),
+        # verify-email and resend-code together.
+        'otp': throttle_rate('THROTTLE_OTP_RATE', '30/min'),
     },
 }
 
@@ -211,8 +213,32 @@ MEDIA_URL = '/media/'
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+# Chosen by the environment: emails are printed to the terminal unless
+# EMAIL_HOST is set, in which case they are sent through that SMTP server.
+# This Django version configures mail through MAILERS and rejects the older
+# EMAIL_HOST-style settings beside it, so the values are read from the
+# environment into lowercase locals (not settings) and passed as OPTIONS.
+_email_host = os.environ.get('EMAIL_HOST', '').strip()
+if _email_host:
+    MAILERS = {
+        'default': {
+            'BACKEND': 'django.core.mail.backends.smtp.EmailBackend',
+            'OPTIONS': {
+                'host': _email_host,
+                'port': int(os.environ.get('EMAIL_PORT') or 587),
+                'username': os.environ.get('EMAIL_HOST_USER', ''),
+                'password': os.environ.get('EMAIL_HOST_PASSWORD', ''),
+                'use_tls': (os.environ.get('EMAIL_USE_TLS') or 'true').lower() == 'true',
+                # Without a timeout a dead mail server would hang the request.
+                'timeout': 10,
+            },
+        },
+    }
+else:
+    MAILERS = {
+        'default': {
+            'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+        },
+    }
+
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or 'Campus League <no-reply@campusleague.local>'

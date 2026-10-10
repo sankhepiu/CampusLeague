@@ -22,6 +22,8 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields['is_staff'] = True
         extra_fields['is_superuser'] = True
+        # Created by an operator at the command line, not by public signup.
+        extra_fields.setdefault('email_verified', True)
         return self.create_user(email, password, **extra_fields)
 
 
@@ -43,6 +45,9 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    # ASSUMPTION (beyond the plan): an account must prove it controls its
+    # email address, with a one-time code, before it can log in.
+    email_verified = models.BooleanField(default=False)
 
     objects = UserManager()
 
@@ -109,3 +114,23 @@ class RoleAssignment(TimeStampedModel):
 
     def __str__(self):
         return f'{self.user} {self.role} {self.term_start} to {self.term_end}'
+
+
+class EmailVerificationCode(TimeStampedModel):
+    """The one-time code most recently emailed to a user (ASSUMPTION: beyond
+    the plan). One row per user: sending a new code overwrites the old one,
+    which is what makes a resend void the previous code.
+
+    The code itself is never stored, only a keyed hash of it. See
+    accounts.verification.
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='verification_code')
+    code_hash = models.CharField(max_length=64)
+    sent_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    # Wrong guesses against this code.
+    attempts = models.PositiveSmallIntegerField(default=0)
+
+    def __str__(self):
+        return f'Verification code for {self.user}'

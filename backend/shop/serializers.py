@@ -62,12 +62,18 @@ class ProductSerializer(serializers.ModelSerializer):
     """
 
     price = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
     sizes = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
-        fields = ['id', 'name', 'description', 'base_price', 'price', 'image', 'active', 'sizes']
+        fields = ['id', 'name', 'description', 'base_price', 'price', 'image_url', 'active', 'sizes']
         read_only_fields = fields
+
+    def get_image_url(self, product):
+        # Relative (/media/products/...), like receipt_url, so the frontend
+        # loads it through its own /media proxy. Null when there is no image.
+        return product.image.url if product.image else None
 
     def get_price(self, product):
         pct = self.context.get('merch_discount_pct', 0)
@@ -85,7 +91,7 @@ class ProductWriteSerializer(serializers.ModelSerializer):
         model = Product
         # No stock here: stock only changes through restock or a sale, so
         # every unit is explained by a StockMovement.
-        fields = ['name', 'description', 'base_price', 'image', 'active']
+        fields = ['name', 'description', 'base_price', 'active']
 
     def create(self, validated_data):
         product = super().create(validated_data)

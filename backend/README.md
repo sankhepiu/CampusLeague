@@ -61,9 +61,11 @@ Builds the Skyline Student Association: one user per role plus a second
 approver, 40 members (4 lapsed, 4 expiring soon), Basic and Plus plans, a past
 event with sales and check-ins, the Spring Gala with 12 General seats left,
 a small meetup, a hoodie and a T-shirt in four sizes (hoodie XL has 1 left),
-two past announcements, a bake-sale fundraiser with tasks, seven expense
-requests (one left pending to approve live), and a Save File for the past
-event. Memberships and tickets are bought through the real
+two past announcements, a bake-sale fundraiser with tasks, eight expense
+requests (two left pending: one to approve live, and the treasurer's own to
+show self-approval being refused), and a Save File for the past event. Each
+role account is also a member with a gala ticket and a merch order, and the
+two products have generated pixel-art pictures. Memberships and tickets are bought through the real
 purchase code, so every rupee has an order, a payment and a ledger entry.
 The logins are printed at the end. Priya is deliberately absent: sign her up
 live.
@@ -72,11 +74,49 @@ live.
 the uploaded receipts in `media/receipts/`. It
 only runs when `DJANGO_DEBUG=true`.
 
+## Demo walkthrough script
+
+```bash
+python manage.py seed_demo --reset
+python manage.py runserver          # in another terminal
+scripts/demo.sh
+```
+
+Eleven requests over real HTTP, each printed with a caption and its status
+code: server-side pricing, idempotent retry, role check at the door, forged
+QR, double scan, last-item stock, self-approval, reconciliation and the Coin
+Trail. It exits non-zero if any status is not the expected one. Run it on a
+fresh seed: it buys the last hoodie XL. Set `BASE=http://host:port` if the
+server is elsewhere.
+
+## Email and verification codes
+
+New accounts must confirm a 6-digit code sent to their email before they can
+log in. Seeded demo accounts are already verified.
+
+By default emails (verification codes, renewal reminders, announcements) are
+**printed in the terminal running `runserver`**; copy the code from there.
+To send real email, set these in `backend/.env` (never in `.env.example` or
+anywhere else in the repository):
+
+```
+EMAIL_HOST=smtp.your-provider.example
+EMAIL_PORT=587
+EMAIL_HOST_USER=...
+EMAIL_HOST_PASSWORD=...
+EMAIL_USE_TLS=true
+DEFAULT_FROM_EMAIL=Campus League <you@your-domain.example>
+```
+
+Leaving `EMAIL_HOST` blank switches back to the terminal.
+
 ## Admin: roles and plans
 
-Until the roles endpoint and the seed script exist, roles are assigned and
-membership plans are created in the Django admin. Prices are in paise
-(Rs 500 = 50000).
+Membership plans can be edited in the Django admin (prices are in paise:
+Rs 500 = 50000). Events, tickets, orders, stock, expenses, the ledger, save
+files and the audit log are visible there too, with amounts in rupees, but
+**read-only**: they change only through the app. The seed creates an admin
+login (`admin@skyline.test`); to make another:
 
 ```bash
 python manage.py createsuperuser   # asks for email, name, college ID, password
