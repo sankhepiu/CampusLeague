@@ -14,6 +14,8 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
 
@@ -26,6 +28,15 @@ urlpatterns = [
     path('api/roles', RoleListCreateView.as_view(), name='role-list'),
     path('api/', include('members.urls')),
     path('api/', include('events.urls')),
+    path('api/', include('shop.urls')),
+    path('api/', include('comms.urls')),
+    path('api/', include('finance.urls')),
+    path('api/', include('volunteering.urls')),
     # Must stay last: anything under /api/ not matched above is a JSON 404.
     re_path(r'^api/', api_not_found),
 ]
+
+if settings.DEBUG:
+    # Development only: lets the browser open uploaded receipts. In
+    # production the web server (or object storage) serves these.
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

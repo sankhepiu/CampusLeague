@@ -77,7 +77,7 @@ def issue_tickets(line, payment):
     for _ in range(line.qty):
         ticket = Ticket.objects.create(
             event_id=tier.event_id, tier=tier, owner=order.buyer, order=order,
-            code=new_code(), qr_token='', price_paid=line.unit_price,
+            code=new_code(), qr_token='', price_paid=line.amount // line.qty,
         )
         # The token contains the ticket id, which exists only after insert.
         ticket.qr_token = sign_ticket(ticket.pk, tier.event_id)

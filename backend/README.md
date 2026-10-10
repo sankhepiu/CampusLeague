@@ -60,12 +60,15 @@ python manage.py seed_demo --reset    # wipe everything and rebuild (about 3 sec
 Builds the Skyline Student Association: one user per role plus a second
 approver, 40 members (4 lapsed, 4 expiring soon), Basic and Plus plans, a past
 event with sales and check-ins, the Spring Gala with 12 General seats left,
-and a small meetup. Memberships and tickets are bought through the real
+a small meetup, a hoodie and a T-shirt in four sizes (hoodie XL has 1 left),
+two past announcements, a bake-sale fundraiser with tasks, and seven expense
+requests (one left pending to approve live). Memberships and tickets are bought through the real
 purchase code, so every rupee has an order, a payment and a ledger entry.
 The logins are printed at the end. Priya is deliberately absent: sign her up
 live.
 
-`--reset` deletes **all** users, orders, tickets, ledger and audit rows. It
+`--reset` deletes **all** users, orders, tickets, ledger and audit rows, and
+the uploaded receipts in `media/receipts/`. It
 only runs when `DJANGO_DEBUG=true`.
 
 ## Admin: roles and plans
@@ -91,6 +94,15 @@ Marks memberships past their end date as lapsed and emails renewal reminders
 14 and 3 days before expiry (once per window, however often it runs). Emails
 are printed to the terminal in development. In production, schedule it once
 a day (cron); for the demo, run it by hand.
+
+## Announcement emails
+
+Posting an announcement emails it straight away. Emails are printed to the
+terminal in development. To retry any that failed (up to 3 attempts each):
+
+```bash
+python manage.py send_announcements
+```
 
 ## The ledger is append-only
 
