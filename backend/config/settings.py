@@ -11,8 +11,10 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import re
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -53,6 +55,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    # No models; installed for its management command (seed_demo).
+    'common',
     'accounts',
     'members',
     'shop',
@@ -60,6 +64,20 @@ INSTALLED_APPS = [
     'audit',
     'events',
 ]
+
+def throttle_rate(variable, default):
+    """Read a DRF rate such as "20/min" from the environment.
+
+    Checked here so a typo stops the server at startup with a clear message,
+    instead of surfacing as a 500 on the first login.
+    """
+    value = os.environ.get(variable, default)
+    if not re.fullmatch(r'[1-9]\d*/(sec|min|hour|day)', value):
+        raise ImproperlyConfigured(
+            f'{variable}={value!r} is not a valid rate. Use "<number>/<sec|min|hour|day>", for example "20/min".'
+        )
+    return value
+
 
 REST_FRAMEWORK = {
     # Token auth only (team decision; the plan allows "session or token").
@@ -87,8 +105,8 @@ REST_FRAMEWORK = {
     # Per client IP, applied by views that set throttle_scope. Counters live
     # in Django's default in-memory cache, so they are per server process.
     'DEFAULT_THROTTLE_RATES': {
-        'login': '20/min',
-        'signup': '10/min',
+        'login': throttle_rate('THROTTLE_LOGIN_RATE', '20/min'),
+        'signup': throttle_rate('THROTTLE_SIGNUP_RATE', '10/min'),
     },
 }
 
