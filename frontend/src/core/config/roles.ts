@@ -20,17 +20,22 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const FEATURE_ACCESS = {
   membership: null,
   events: null,
+  // Announcements archive (GET /announcements) is public per the contract —
+  // this entry only governs the nav link for signed-in users; the routes
+  // themselves live in AppRoutes' public group, same as events.
+  announcements: null,
   tickets: null,
   shop: null,
   orders: null,
   volunteering: null,
-  announcements: null,
   members: ['president', 'treasurer', 'event_manager'],
   // Check-in reveals membership status to whoever is scanning, so it's
   // deliberately narrower than most staff areas — contract is explicit:
   // "President or event manager only."
   checkin: ['president', 'event_manager'],
   eventAdmin: ['president', 'event_manager'],
+  shopAdmin: ['president', 'treasurer', 'event_manager'],
+  announcementCompose: ['president', 'event_manager', 'volunteer_coordinator'],
   expenses: ['president', 'treasurer', 'volunteer_coordinator'],
   finance: ['president', 'treasurer'],
   insights: ['president', 'treasurer', 'event_manager'],

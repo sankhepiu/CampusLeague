@@ -1,0 +1,32 @@
+@use '../../styles/mixins';
+
+.meta {
+  color: var(--cl-color-text-muted);
+  margin: 0 0 1.5rem;
+}
+
+.body {
+  white-space: pre-wrap;
+  margin-bottom: 1.5rem;
+}
+
+.deliveryRow {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+
+.logLink {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  text-decoration: none;
+  display: inline-block;
+  margin-top: 1rem;
+}

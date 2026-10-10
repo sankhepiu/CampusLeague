@@ -1,6 +1,7 @@
 import { ApiRequestError, type Paginated } from '../../api/client';
 import { getCurrentMockUser } from '../auth/mockUsers';
 import { getMockTier, priceForCurrentUser, reserveMockSeats } from '../events/mockEventsStore';
+import { addMockOrder } from '../orders/mockOrdersStore';
 import { createMockTickets, listMockTicketsForUser, toPublicTicket } from './mockTicketsStore';
 import type { PurchaseTicketsRequest, PurchaseTicketsResult, Ticket, TicketOrder, TicketPayment } from './types';
 
@@ -131,6 +132,14 @@ export const mockTicketsApi = {
 
     idempotency[idempotencyKey] = { userEmail: user.email, eventId, tier: tierId, quantity, result };
     saveIdempotency(idempotency);
+
+    // TicketOrder has no `lines` field of its own — synthesize one so the
+    // shared My Orders history (orders/types.ts) can show this purchase
+    // alongside membership and merch orders.
+    addMockOrder(user.email, {
+      ...order,
+      lines: [{ id: orderId, kind: 'ticket', plan: null, tier: tierId, productSize: null, qty: quantity, unitPrice, discount: 0 }],
+    });
 
     return result;
   },

@@ -1,0 +1,125 @@
+@use '../../styles/mixins';
+
+.list {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lineName {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.75rem;
+  margin: 0 0 0.4rem;
+}
+
+.lineMeta {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+}
+
+.lineMetaWarn {
+  color: var(--cl-color-danger);
+}
+
+.lineControls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.qtyButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  font-family: var(--cl-font-pixel);
+  cursor: pointer;
+}
+
+.removeButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 2px solid var(--cl-color-danger);
+  background: none;
+  color: var(--cl-color-danger);
+  cursor: pointer;
+}
+
+.summary {
+  margin-bottom: 1.5rem;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+}
+
+.summaryTotal {
+  font-size: 1.2rem;
+  font-weight: bold;
+  border-top: 2px solid var(--cl-color-bg-raised);
+  padding-top: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.estimateNote {
+  color: var(--cl-color-text-muted);
+  font-size: 0.8rem;
+  margin: 0.5rem 0 0;
+}
+
+.testOutcome {
+  margin: 1rem 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--cl-color-primary-dark);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.buttonSecondary {
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+}
+
+.successBox {
+  text-align: center;
+  padding: 1rem 0;
+}

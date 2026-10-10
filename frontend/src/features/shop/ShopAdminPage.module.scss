@@ -1,0 +1,68 @@
+@use '../../styles/mixins';
+
+.section {
+  margin-bottom: 1.5rem;
+}
+
+.sectionTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 36rem) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.stockTable {
+  width: 100%;
+  margin-bottom: 1.5rem;
+  border-collapse: collapse;
+}
+
+.stockTable th,
+.stockTable td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 2px solid var(--cl-color-bg-raised);
+  font-size: 0.9rem;
+}
+
+.successNote {
+  color: var(--cl-color-success);
+  margin-bottom: 1rem;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.1rem;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+}
