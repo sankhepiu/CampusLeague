@@ -85,6 +85,19 @@ class SignupSerializer(serializers.Serializer):
             raise serializers.ValidationError({'email': [EMAIL_TAKEN]})
 
 
+class VerifyEmailSerializer(serializers.Serializer):
+    email = serializers.CharField(max_length=254)
+    # Not validated as "6 digits" here: anything that is not the right code
+    # is simply a wrong code (invalid_code), and counts as an attempt.
+    code = serializers.CharField(max_length=20)
+
+
+class ResendCodeSerializer(serializers.Serializer):
+    # A plain string on purpose: a malformed address gets the same answer as
+    # any other address with no account.
+    email = serializers.CharField(max_length=254)
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=254)
     password = serializers.CharField(max_length=128, trim_whitespace=False, write_only=True)

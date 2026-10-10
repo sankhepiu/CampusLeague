@@ -28,23 +28,16 @@ def signup_body(**overrides):
 
 
 class SignupTests(ApiTestCase):
-    def test_signup_creates_user_and_returns_token(self):
+    def test_signup_creates_an_unverified_user_and_returns_no_token(self):
         response = self.client.post(SIGNUP, signup_body(), format='json')
 
         self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json(), {'verification_required': True, 'email': 'priya@example.com'})
         user = User.objects.get()
-        self.assertEqual(response.json(), {
-            'token': Token.objects.get(user=user).key,
-            'user': {
-                'id': user.id,
-                'email': 'priya@example.com',
-                'name': 'Priya',
-                'college_id': 'SSA-001',
-                'phone': '+919876543210',
-                'roles': [],
-                'membership_status': 'none',
-            },
-        })
+        self.assertEqual((user.name, user.college_id, user.phone), ('Priya', 'SSA-001', '+919876543210'))
+        self.assertFalse(user.email_verified)
+        # No session exists until the email is verified.
+        self.assertEqual(Token.objects.count(), 0)
 
     def test_password_is_hashed_and_never_returned(self):
         response = self.client.post(SIGNUP, signup_body(), format='json')
@@ -55,17 +48,17 @@ class SignupTests(ApiTestCase):
         self.assertNotIn(PASSWORD, response.content.decode())
         self.assertNotIn(user.password, response.content.decode())
 
-    def test_returned_token_authenticates(self):
-        token = self.client.post(SIGNUP, signup_body(), format='json').json()['token']
-        self.use_token(token)
-        self.assertEqual(self.client.get(ME).status_code, 200)
+    def test_signup_alone_gives_no_access(self):
+        response = self.client.post(SIGNUP, signup_body(), format='json')
+        self.assertNotIn('token', response.json())
+        self.assert_error(self.client.get(ME), 401, 'not_authenticated')
 
     def test_phone_is_optional(self):
         body = signup_body()
         del body['phone']
         response = self.client.post(SIGNUP, body, format='json')
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(response.json()['user']['phone'], '')
+        self.assertEqual(User.objects.get().phone, '')
 
     def test_email_is_normalised_to_lowercase(self):
         response = self.client.post(SIGNUP, signup_body(email='Priya@Example.COM'), format='json')
@@ -73,7 +66,7 @@ class SignupTests(ApiTestCase):
         self.assertEqual(User.objects.get().email, 'priya@example.com')
 
     def test_privilege_fields_from_the_client_are_ignored(self):
-        body = signup_body(is_staff=True, is_superuser=True, roles=['president'], id=999)
+        body = signup_body(is_staff=True, is_superuser=True, roles=['president'], id=999, email_verified=True)
         response = self.client.post(SIGNUP, body, format='json')
 
         self.assertEqual(response.status_code, 201, response.content)
@@ -82,7 +75,8 @@ class SignupTests(ApiTestCase):
         self.assertFalse(user.is_superuser)
         self.assertNotEqual(user.id, 999)
         self.assertEqual(RoleAssignment.objects.count(), 0)
-        self.assertEqual(response.json()['user']['roles'], [])
+        self.assertEqual(User.objects.get().current_roles(), [])
+        self.assertFalse(User.objects.get().email_verified)       # nor can the client mark itself verified
 
     def test_duplicate_email_is_rejected(self):
         self.make_user()

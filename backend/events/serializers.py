@@ -134,13 +134,16 @@ class CheckInRequestSerializer(serializers.Serializer):
     # Plan: "Body: scanned token or manual code."
     token = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     code = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+    # A member card instead of a ticket: reports membership only.
+    member_token = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     # ASSUMPTION (not in the plan): the scanner may say which event it is
     # working; a ticket for any other event is then reported as invalid.
     event = serializers.IntegerField(min_value=1, required=False, allow_null=True, default=None)
 
     def validate(self, attrs):
-        if bool(attrs['token']) == bool(attrs['code']):
+        given = [name for name in ('token', 'code', 'member_token') if attrs[name]]
+        if len(given) != 1:
             raise serializers.ValidationError(
-                error('Send exactly one of token or code.', 'token_or_code_required')
+                error('Send exactly one of token, code or member_token.', 'token_or_code_required')
             )
         return attrs

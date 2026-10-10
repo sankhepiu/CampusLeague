@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/', include('finance.urls')),
     path('api/', include('volunteering.urls')),
     path('api/', include('insights.urls')),
+    path('api/', include('audit.urls')),
     # Must stay last: anything under /api/ not matched above is a JSON 404.
     re_path(r'^api/', api_not_found),
 ]
