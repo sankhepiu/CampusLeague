@@ -6,6 +6,8 @@ from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail
 
+from members.services import membership_status
+
 User = get_user_model()
 
 EMAIL_TAKEN = ErrorDetail('An account with this email already exists.', code='email_taken')
@@ -26,9 +28,9 @@ class UserSerializer(serializers.ModelSerializer):
         return user.current_roles()
 
     def get_membership_status(self, user):
-        # Membership does not exist yet (next step). Until then every user is
-        # "none"; the plan's values are active, lapsed, none.
-        return 'none'
+        # active, lapsed or none, decided from Membership rows (never from
+        # the "member" role).
+        return membership_status(user)
 
 
 class SignupSerializer(serializers.Serializer):

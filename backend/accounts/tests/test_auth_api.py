@@ -3,9 +3,9 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
 
 from accounts.models import RoleAssignment
+from common.testing import PASSWORD, ApiTestCase
 
 User = get_user_model()
 
@@ -13,8 +13,6 @@ SIGNUP = '/api/auth/signup'
 LOGIN = '/api/auth/login'
 LOGOUT = '/api/auth/logout'
 ME = '/api/auth/me'
-
-PASSWORD = 'correct-horse-battery'
 
 
 def signup_body(**overrides):
@@ -27,29 +25,6 @@ def signup_body(**overrides):
     }
     body.update(overrides)
     return body
-
-
-class ApiTestCase(APITestCase):
-    def make_user(self, email='priya@example.com', **extra):
-        fields = {'password': PASSWORD, 'name': 'Priya', 'college_id': 'SSA-001'}
-        fields.update(extra)
-        return User.objects.create_user(email=email, **fields)
-
-    def use_token(self, key):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Token {key}')
-
-    def assert_error(self, response, status, code, field=None):
-        self.assertEqual(response.status_code, status, response.content)
-        self.assertEqual(response['Content-Type'], 'application/json')
-        body = response.json()
-        self.assertGreaterEqual(set(body), {'code', 'message', 'field'})
-        self.assertEqual(body['code'], code)
-        self.assertEqual(body['field'], field)
-        self.assertTrue(body['message'])
-        return body
-
-    def field_codes(self, body):
-        return {(error['field'], error['code']) for error in body['errors']}
 
 
 class SignupTests(ApiTestCase):
@@ -207,6 +182,7 @@ class SignupTests(ApiTestCase):
 
 class LoginTests(ApiTestCase):
     def setUp(self):
+        super().setUp()
         self.user = self.make_user()
 
     def login(self, email='priya@example.com', password=PASSWORD):
@@ -261,6 +237,7 @@ class LoginTests(ApiTestCase):
 
 class LogoutTests(ApiTestCase):
     def setUp(self):
+        super().setUp()
         self.user = self.make_user()
         self.token = Token.objects.create(user=self.user)
 
@@ -294,6 +271,7 @@ class LogoutTests(ApiTestCase):
 
 class MeTests(ApiTestCase):
     def setUp(self):
+        super().setUp()
         self.user = self.make_user(phone='+919876543210')
         self.token = Token.objects.create(user=self.user)
         self.today = timezone.localdate()
