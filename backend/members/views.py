@@ -96,7 +96,12 @@ class MemberListView(ListAPIView):
     ?search=text matches name or email, ignoring case.
     """
 
-    permission_classes = [has_role('president', 'treasurer', 'event_manager')]
+    # Plan API table: P, T, EM.
+    # ASSUMPTION (beyond the plan): the volunteer coordinator may read the
+    # list too. They assign people to tasks (POST /tasks/{id}/assign) and
+    # need names to choose from; without this the assignee picker gets a 403.
+    # The view is read-only for everyone: ListAPIView accepts GET only.
+    permission_classes = [has_role('president', 'treasurer', 'event_manager', 'volunteer_coordinator')]
     serializer_class = MemberSerializer
 
     def get_queryset(self):

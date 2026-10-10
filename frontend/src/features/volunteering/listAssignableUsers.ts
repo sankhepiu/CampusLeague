@@ -6,10 +6,9 @@ export interface AssignableUser {
   email: string;
 }
 
-/** Everyone a task can be assigned to, from GET /members. The contract docs
- * still list this as president/treasurer/event-manager only, but the
- * backend now also allows volunteer_coordinator — confirmed directly by the
- * brief that added task assignment, ahead of the docs catching up. */
+/** Everyone a task can be assigned to, from GET /members (documented in
+ * docs/API_CONTRACT.md). Readable by president, treasurer, event manager
+ * and volunteer coordinator, which covers everyone allowed to assign tasks. */
 export async function listAssignableUsers(): Promise<AssignableUser[]> {
   const members = await membersApi.list({});
   return members.map((m) => ({ id: m.id, name: m.name, email: m.email }));

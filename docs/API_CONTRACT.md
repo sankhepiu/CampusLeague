@@ -466,8 +466,13 @@ Errors: `401 not_authenticated`, `401 authentication_failed`.
 
 Member list with status. Requirements: R1, R5.
 
-- **Who:** President, treasurer or event manager. Anyone else, including a
-  paid-up member, gets `403 permission_denied`.
+- **Who:** President, treasurer, event manager or volunteer coordinator.
+  Anyone else, including a paid-up member, gets `403 permission_denied`.
+  **Assumption:** the plan lists president, treasurer and event manager; the
+  volunteer coordinator is added because they assign people to tasks
+  (`POST /tasks/{id}/assign`) and need the names to choose from.
+- **Read-only:** the only method is `GET`. There is no way to create, edit
+  or delete a member through this endpoint, for any role.
 - **Database:** read only. Every account is listed, ordered by name; 20 per
   page.
 
