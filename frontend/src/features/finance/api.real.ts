@@ -117,11 +117,16 @@ function fromWireSource(s: WireSource): TraceSource {
     case 'order_line':
       return { type: s.type, id: s.id, label: s.label, details: { order: d.order!, buyer: d.buyer!, tickets: (d.tickets ?? []).map((t) => ({ type: 'ticket', id: t.id, code: t.code, holder: t.holder, pricePaid: t.price_paid, status: t.status, checkedInAt: t.checked_in_at })) } };
     case 'order':
-      return { type: s.type, id: s.id, label: s.label, details: { order: d.order!, buyer: d.buyer!, items: (d.items ?? []).map((i) => ({ product: i.product, size: i.size, qty: i.qty, unitPrice: i.unit_price })) } };
+      // GAP: `order` is missing from the live backend's merch order source
+      // today — left optional rather than force-unwrapped (see types.ts).
+      return { type: s.type, id: s.id, label: s.label, details: { order: d.order, buyer: d.buyer!, items: (d.items ?? []).map((i) => ({ product: i.product, size: i.size, qty: i.qty, unitPrice: i.unit_price })) } };
     case 'payment':
       return { type: s.type, id: s.id, label: s.label, details: { payer: d.payer!, plan: d.plan! } };
     case 'expense_request':
-      return { type: s.type, id: s.id, label: s.label, details: { requester: d.requester!, description: d.description!, receiptUrl: d.receipt_url!, approvedBy: d.approved_by ?? null } };
+      // GAP: `description`/`approved_by` are missing from the live backend's
+      // expense_request source today — left optional rather than
+      // force-unwrapped (see types.ts).
+      return { type: s.type, id: s.id, label: s.label, details: { requester: d.requester!, description: d.description, receiptUrl: d.receipt_url!, approvedBy: d.approved_by } };
     case 'fundraiser_sale':
       return { type: s.type, id: s.id, label: s.label, details: { fundraiser: d.fundraiser!, note: d.note ?? '' } };
   }
