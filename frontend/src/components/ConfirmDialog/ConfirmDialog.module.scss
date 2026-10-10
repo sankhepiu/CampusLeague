@@ -1,0 +1,59 @@
+@use '../../styles/mixins';
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: grid;
+  place-items: center;
+  background: var(--cl-overlay);
+  padding: 1rem;
+}
+
+.card {
+  @include mixins.pixel-border;
+  @include mixins.depth(var(--cl-coral), 5px, 5px);
+  background: var(--cl-color-panel);
+  padding: 1.75rem;
+  max-width: 24rem;
+  width: 100%;
+}
+
+.title {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.8rem;
+  margin: 0 0 1rem;
+}
+
+.message {
+  color: var(--cl-color-text-muted);
+  margin: 0 0 1.5rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.6rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.confirm {
+  background: var(--cl-color-danger);
+  border-color: var(--cl-color-border);
+  color: var(--cl-base);
+}
+
+.confirm:hover {
+  filter: brightness(1.1);
+}

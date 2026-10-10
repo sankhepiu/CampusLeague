@@ -1,0 +1,16 @@
+.stat {
+  margin-bottom: 1.25rem;
+}
+
+.label {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  color: var(--cl-color-text-muted);
+  margin: 0 0 0.6rem;
+}
+
+.value {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+}

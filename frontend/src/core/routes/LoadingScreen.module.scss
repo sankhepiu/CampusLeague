@@ -1,0 +1,50 @@
+@use '../../styles/mixins';
+
+.screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.content {
+  text-align: center;
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+  width: min(90vw, 22rem);
+}
+
+.title {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.9rem;
+  color: var(--cl-color-text);
+  margin: 0;
+}
+
+.track {
+  @include mixins.pixel-border;
+  @include mixins.depth-flat;
+  width: 100%;
+  height: 1.5rem;
+  background: var(--cl-color-bg-raised);
+  padding: 3px;
+}
+
+.fill {
+  height: 100%;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--cl-color-primary),
+    var(--cl-color-primary) 8px,
+    var(--cl-color-primary-dark) 8px,
+    var(--cl-color-primary-dark) 16px
+  );
+  transition: width 0.15s linear;
+}
+
+.tip {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  min-height: 1.4em;
+}

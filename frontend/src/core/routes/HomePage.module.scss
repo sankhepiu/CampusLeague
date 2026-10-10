@@ -1,0 +1,23 @@
+.wrapper {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.greeting {
+  font-size: 1.05rem;
+  margin: 0 0 0.3rem;
+  color: var(--cl-color-text-muted);
+}
+
+.title {
+  font-family: var(--cl-font-pixel);
+  font-size: 1.1rem;
+  margin: 0 0 1.75rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 1rem;
+}

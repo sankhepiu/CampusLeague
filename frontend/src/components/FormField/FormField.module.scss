@@ -1,0 +1,56 @@
+@use '../../styles/mixins';
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
+.label {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  color: var(--cl-color-text);
+}
+
+.required {
+  margin-left: 0.25rem;
+}
+
+.required::after {
+  content: '*';
+  color: var(--cl-color-danger);
+}
+
+.control {
+  @include mixins.depth-flat;
+  font-family: var(--cl-font-body);
+  font-size: 1.1rem;
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  border: 3px solid var(--cl-color-border);
+  padding: 0.55rem 0.7rem;
+  transition: border-color 0.12s ease-out;
+}
+
+.control:focus-visible {
+  outline: 3px solid var(--cl-color-focus);
+  outline-offset: 1px;
+  border-color: var(--cl-color-focus);
+}
+
+.invalid {
+  border-color: var(--cl-color-danger);
+}
+
+.hint {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.error {
+  color: var(--cl-color-danger);
+  font-size: 0.85rem;
+  margin: 0;
+}

@@ -1,0 +1,25 @@
+.shell {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-family: var(--cl-font-pixel);
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.back {
+  font-size: 0.95rem;
+  color: var(--cl-color-text-muted);
+}
