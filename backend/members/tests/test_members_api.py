@@ -147,15 +147,71 @@ class MemberListPermissionTests(MemberListTestCase):
                 self.login_as(user)
                 self.assertEqual(self.client.get(MEMBERS).status_code, 200)
 
+    def test_volunteer_coordinator_may_read_the_same_list(self):
+        # They assign people to tasks, so they need the names.
+        self.login_as(self.president)
+        as_president = self.client.get(MEMBERS).json()
+        coordinator = self.make_role_user('volunteer_coordinator')
+        self.login_as(coordinator)
+
+        response = self.client.get(MEMBERS)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        # Same fields as every other reader gets, nothing more.
+        self.assertEqual(set(body['results'][0]), {'id', 'email', 'name', 'college_id', 'roles', 'membership_status'})
+        # Same people, plus the coordinator account created just above.
+        self.assertEqual(body['count'], as_president['count'] + 1)
+        listed = {item['id']: item for item in body['results']}
+        for item in as_president['results']:
+            self.assertEqual(listed[item['id']], item)
+        self.assertEqual(listed[coordinator.id]['roles'], ['volunteer_coordinator'])
+
+    def test_volunteer_coordinator_can_filter_and_search(self):
+        self.login_as(self.make_role_user('volunteer_coordinator'))
+        self.assertEqual(self.names(status='active'), ['Asha Rao'])
+        self.assertEqual(self.names(search='menon'), ['Ravi Menon'])
+        self.assert_error(self.client.get(MEMBERS, {'status': 'bogus'}), 400, 'validation_error', field='status')
+
+    def test_list_stays_read_only_for_the_volunteer_coordinator(self):
+        self.login_as(self.make_role_user('volunteer_coordinator'))
+        before = User.objects.count()
+        writes = [
+            self.client.post(MEMBERS, {'name': 'New', 'email': 'new@example.com'}, format='json'),
+            self.client.put(MEMBERS, {'name': 'New'}, format='json'),
+            self.client.patch(MEMBERS, {'name': 'New'}, format='json'),
+            self.client.delete(MEMBERS),
+        ]
+        for response in writes:
+            self.assert_error(response, 405, 'method_not_allowed')
+        # No per-member endpoint exists to edit or delete through either.
+        for method in ['patch', 'put', 'delete']:
+            response = getattr(self.client, method)(f'{MEMBERS}/{self.asha.id}', {'name': 'Hacked'}, format='json')
+            self.assert_error(response, 404, 'not_found')
+        self.asha.refresh_from_db()
+        self.assertEqual((self.asha.name, User.objects.count()), ('Asha Rao', before))
+
+    def test_coordinator_gains_no_other_staff_access(self):
+        # Only the member list opened up; the money and admin endpoints did not.
+        self.login_as(self.make_role_user('volunteer_coordinator'))
+        for url in ['/api/finance/summary', '/api/audit', '/api/roles', '/api/expenses', '/api/health']:
+            with self.subTest(url=url):
+                self.assert_error(self.client.get(url), 403, 'permission_denied')
+
+    def test_volunteer_coordinator_whose_term_ended_gets_403(self):
+        former = self.make_user(email='oldvc@example.com', name='Old Coordinator', college_id='SSA-OVC')
+        self.give_role(former, 'volunteer_coordinator', start_offset=-400, end_offset=-1)
+        self.login_as(former)
+        self.assert_error(self.client.get(MEMBERS), 403, 'permission_denied')
+
     def test_member_gets_403(self):
         self.login_as(self.asha)                    # an active, paid-up member with no role
         self.assert_error(self.client.get(MEMBERS), 403, 'permission_denied')
 
-    def test_member_role_and_volunteer_coordinator_get_403(self):
-        for role in ['member', 'volunteer_coordinator']:
-            with self.subTest(role=role):
-                self.login_as(self.make_role_user(role))
-                self.assert_error(self.client.get(MEMBERS), 403, 'permission_denied')
+    def test_member_role_gets_403(self):
+        # The "member" committee role is not a staff role.
+        self.login_as(self.make_role_user('member'))
+        self.assert_error(self.client.get(MEMBERS), 403, 'permission_denied')
 
     def test_filters_do_not_bypass_the_permission_check(self):
         self.login_as(self.asha)
