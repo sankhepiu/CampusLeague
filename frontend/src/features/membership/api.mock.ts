@@ -38,7 +38,6 @@ function seedState(): MockMembershipState {
         status: 'active',
         startDate: addMonths(today(), -1),
         endDate: addMonths(today(), 11),
-        qrToken: 'mock-qr:seed:active',
       },
       'lapsed@campusleague.dev': {
         id: 2,
@@ -46,7 +45,6 @@ function seedState(): MockMembershipState {
         status: 'lapsed',
         startDate: addMonths(today(), -14),
         endDate: addMonths(today(), -2),
-        qrToken: 'mock-qr:seed:lapsed',
       },
     },
     idempotency: {},
@@ -106,6 +104,11 @@ export function getActiveMembershipPlanForCurrentUser(): Plan | null {
   return effectiveRecord(record).status === 'active' ? record.plan : null;
 }
 
+/** Mock member-card token. The real one is signed by the server; this only
+ * needs to be recognisable by the mock check-in scanner. */
+export const MOCK_MEMBER_TOKEN_PREFIX = 'mock-member:';
+export const mockMemberToken = (userId: number) => `${MOCK_MEMBER_TOKEN_PREFIX}${userId}`;
+
 export const mockMembershipApi = {
   async listPlans(): Promise<Plan[]> {
     await delay(300);
@@ -117,7 +120,7 @@ export const mockMembershipApi = {
     const user = requireUser();
     const state = loadState();
     const stored = state.memberships[user.email];
-    if (!stored) return { status: 'none', membership: null, paidUntil: null };
+    if (!stored) return { status: 'none', membership: null, paidUntil: null, memberQrToken: null };
 
     const record = effectiveRecord(stored);
     if (record.status !== stored.status) {
@@ -127,7 +130,7 @@ export const mockMembershipApi = {
     }
 
     const status = record.status === 'active' ? 'active' : record.status === 'lapsed' ? 'lapsed' : 'none';
-    return { status, membership: record, paidUntil: record.endDate };
+    return { status, membership: record, paidUntil: record.endDate, memberQrToken: mockMemberToken(user.id) };
   },
 
   async purchase({ plan: planId, testOutcome = 'success' }: PurchaseRequest, idempotencyKey: string): Promise<PurchaseResult> {
@@ -143,7 +146,7 @@ export const mockMembershipApi = {
           message: 'This idempotency key already paid for a different plan, or belongs to another user.',
         });
       }
-      return replay.result;
+      return { ...replay.result, replayed: true };
     }
 
     const plan = MOCK_PLANS.find((p) => p.id === planId);
@@ -171,7 +174,7 @@ export const mockMembershipApi = {
         createdAt,
         lines: [{ id: orderId, kind: 'membership', plan: plan.id, qty: 1, unitPrice: plan.price }],
       };
-      return { order, payment: null, membership: null };
+      return { order, payment: null, membership: null, replayed: false };
     }
 
     const existing = state.memberships[user.email];
@@ -186,7 +189,6 @@ export const mockMembershipApi = {
       status: 'active',
       startDate,
       endDate,
-      qrToken: `mock-qr:${user.id}:${orderId}:${gatewayRef}`,
     };
     const order: Order = {
       id: orderId,
@@ -201,11 +203,11 @@ export const mockMembershipApi = {
     const payment: Payment = { id: newId(), amount: plan.price, status: 'succeeded', gatewayRef, createdAt };
 
     state.memberships[user.email] = membership;
-    const result: PurchaseResult = { order, payment, membership };
+    const result: PurchaseResult = { order, payment, membership, replayed: false };
     state.idempotency[idempotencyKey] = { userEmail: user.email, plan: plan.id, result };
     addMockOrder(user.email, {
       ...order,
-      lines: order.lines.map((l) => ({ ...l, kind: 'membership' as const, tier: null, productSize: null, discount: 0 })),
+      lines: order.lines.map((l) => ({ ...l, kind: 'membership' as const, label: `${plan.name} membership`, tier: null, productSize: null, discount: 0 })),
     });
     saveState(state);
     updateUser(user.email, { membershipStatus: 'active' });

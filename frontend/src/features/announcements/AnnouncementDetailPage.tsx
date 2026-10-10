@@ -7,6 +7,7 @@ import { useAsync } from '../../core/hooks/useAsync';
 import { accentVarForFeature } from '../../core/config/accents';
 import { announcementsApi } from './api';
 import styles from './AnnouncementDetailPage.module.scss';
+import { formatDateTime } from '../../core/utils/formatDateTime';
 
 export function AnnouncementDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -19,7 +20,7 @@ export function AnnouncementDetailPage() {
   return (
     <PageShell title={announcement.title} background="dotted">
       <p className={styles.meta}>
-        {announcement.author.name} · {new Date(announcement.publishedAt).toLocaleString('en-IN')} ·{' '}
+        {announcement.author.name} · {formatDateTime(announcement.publishedAt)} ·{' '}
         {announcement.audience === 'members' ? 'Members only' : 'Everyone'}
       </p>
 

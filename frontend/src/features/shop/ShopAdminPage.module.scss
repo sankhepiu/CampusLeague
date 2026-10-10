@@ -66,3 +66,37 @@
   font-family: var(--cl-font-pixel);
   font-size: 0.65rem;
 }
+
+.imageRow {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.imagePreview {
+  width: 4.5rem;
+  height: 4.5rem;
+  object-fit: contain;
+  background: #212529;
+  image-rendering: pixelated;
+  border: 2px solid var(--cl-color-border);
+  flex: none;
+}
+
+.imageNone {
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  font-size: 0.7rem;
+  color: var(--cl-color-text-muted);
+  background: var(--cl-color-bg-raised);
+  border: 2px dashed var(--cl-color-border);
+  flex: none;
+}
+
+.imageNote {
+  font-size: 0.85rem;
+  color: var(--cl-color-text-muted);
+}

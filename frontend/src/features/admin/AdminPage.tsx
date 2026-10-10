@@ -14,6 +14,7 @@ import { membersApi } from '../members/api';
 import { adminApi } from './api';
 import type { AuditLogItem } from './types';
 import styles from './AdminPage.module.scss';
+import { formatDateTime } from '../../core/utils/formatDateTime';
 
 export function AdminPage() {
   return (
@@ -108,6 +109,8 @@ const ACTION_OPTIONS = [
   { value: '', label: 'All actions' },
   { value: 'role.assigned', label: 'role.assigned' },
   { value: 'expense.approved', label: 'expense.approved' },
+  { value: 'expense.rejected', label: 'expense.rejected' },
+  { value: 'expense.paid', label: 'expense.paid' },
   { value: 'stock.restocked', label: 'stock.restocked' },
   { value: 'savefile.updated', label: 'savefile.updated' },
   { value: 'savefile.created', label: 'savefile.created' },
@@ -119,7 +122,7 @@ function AuditLog() {
   const { status, data, error, reload } = useAsync(() => adminApi.listAuditLog({ action: action || undefined }, page), [action, page]);
 
   const columns: DataTableColumn<AuditLogItem>[] = [
-    { key: 'at', header: 'When', render: (a) => new Date(a.at).toLocaleString('en-IN') },
+    { key: 'at', header: 'When', render: (a) => formatDateTime(a.at) },
     { key: 'actor', header: 'Actor', render: (a) => a.actor?.name ?? 'System' },
     { key: 'action', header: 'Action', render: (a) => a.action },
     { key: 'object', header: 'Object', render: (a) => `${a.objectType} #${a.objectId}` },

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { setUnauthorizedHandler, type ApiError } from '../../api/client';
 import { authApi } from '../../features/auth/api';
-import type { AuthUser, SignupRequest } from '../../features/auth/types';
+import type { AuthUser, SignupRequest, SignupResult } from '../../features/auth/types';
 import type { Role } from '../config/roles';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'error';
@@ -11,7 +11,11 @@ interface AuthContextValue {
   user: AuthUser | null;
   error: ApiError | null;
   login: (email: string, password: string) => Promise<void>;
-  signup: (data: SignupRequest) => Promise<void>;
+  /** Creates the account. Does NOT sign in: the email must be verified. */
+  signup: (data: SignupRequest) => Promise<SignupResult>;
+  /** Confirms the emailed code and signs the user in. */
+  verifyEmail: (email: string, code: string) => Promise<void>;
+  resendCode: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   hasRole: (...roles: Role[]) => boolean;
 }
@@ -67,21 +71,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const signup = useCallback(async (data: SignupRequest) => {
-    setStatus('loading');
+  // Signup creates an unverified account and returns no token, so the auth
+  // status does not change here: the visitor stays signed out until
+  // verifyEmail succeeds. The request only ever carries what the server
+  // needs — no role field exists on SignupRequest.
+  const signup = useCallback((data: SignupRequest) => authApi.signup(data), []);
+
+  const verifyEmail = useCallback(async (email: string, code: string) => {
+    const authUser = await authApi.verifyEmail({ email, code });
     setError(null);
-    try {
-      // The request only ever carries what the server needs — no role field
-      // exists on SignupRequest, so there is nothing client-side to strip.
-      const authUser = await authApi.signup(data);
-      setUser(authUser);
-      setStatus('authenticated');
-    } catch (err) {
-      setError(err as ApiError);
-      setStatus('unauthenticated');
-      throw err;
-    }
+    setUser(authUser);
+    setStatus('authenticated');
   }, []);
+
+  const resendCode = useCallback((email: string) => authApi.resendCode(email), []);
 
   const logout = useCallback(async () => {
     await authApi.logout();
@@ -91,8 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hasRole = useCallback((...roles: Role[]) => !!user && roles.some((r) => user.roles.includes(r)), [user]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, error, login, signup, logout, hasRole }),
-    [status, user, error, login, signup, logout, hasRole],
+    () => ({ status, user, error, login, signup, verifyEmail, resendCode, logout, hasRole }),
+    [status, user, error, login, signup, verifyEmail, resendCode, logout, hasRole],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

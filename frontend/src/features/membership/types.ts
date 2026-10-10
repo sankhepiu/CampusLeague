@@ -60,13 +60,17 @@ export interface PurchaseResult {
   order: Order;
   payment: Payment | null;
   membership: MembershipRecord | null;
+  /** True when the server answered 200, not 201: this Idempotency-Key had
+   * already paid, and this is that earlier result (nothing new was charged). */
+  replayed: boolean;
 }
 
 export interface MyMembership {
   status: 'active' | 'lapsed' | 'none';
   membership: MembershipRecord | null;
   paidUntil: string | null;
-  /** QR content for the member card, when there's an active/lapsed
-   * membership to show one for; `null` otherwise. */
+  /** The member card: an opaque, server-signed string to render as a QR code
+   * exactly as received. `null` for someone who has never been a member. A
+   * lapsed member still has one (it scans as "not a member"). */
   memberQrToken: string | null;
 }

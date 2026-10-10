@@ -1,4 +1,4 @@
-import { request, type Paginated } from '../../api/client';
+import { request, requestWithStatus, type Paginated } from '../../api/client';
 import type { PlaceOrderRequest, PlaceOrderResult, Product, ProductDraft, ProductSize, RestockRequest, ShopOrder, ShopOrderLine, ShopPayment } from './types';
 
 interface WireProductSize {
@@ -13,7 +13,7 @@ interface WireProduct {
   description: string;
   base_price: number;
   price: number;
-  image: string;
+  image_url: string | null;
   active: boolean;
   sizes: WireProductSize[];
 }
@@ -58,7 +58,7 @@ function fromWireProduct(p: WireProduct): Product {
     description: p.description,
     basePrice: p.base_price,
     price: p.price,
-    image: p.image,
+    imageUrl: p.image_url,
     active: p.active,
     sizes: p.sizes.map((s) => ({ id: s.id, size: s.size, stock: s.stock })),
   };
@@ -103,7 +103,6 @@ export const realShopApi = {
           name: draft.name,
           base_price: draft.basePrice,
           ...(draft.description !== undefined ? { description: draft.description } : {}),
-          ...(draft.image !== undefined ? { image: draft.image } : {}),
           ...(draft.active !== undefined ? { active: draft.active } : {}),
         },
       }),
@@ -115,7 +114,6 @@ export const realShopApi = {
     if (draft.name !== undefined) body.name = draft.name;
     if (draft.basePrice !== undefined) body.base_price = draft.basePrice;
     if (draft.description !== undefined) body.description = draft.description;
-    if (draft.image !== undefined) body.image = draft.image;
     if (draft.active !== undefined) body.active = draft.active;
     return fromWireProduct(await request<WireProduct>(`/products/${id}`, { method: 'PATCH', body }));
   },
@@ -125,7 +123,7 @@ export const realShopApi = {
   },
 
   async placeOrder({ items, testOutcome }: PlaceOrderRequest, idempotencyKey: string): Promise<PlaceOrderResult> {
-    const result = await request<WirePlaceOrderResult>('/orders', {
+    const { status, data: result } = await requestWithStatus<WirePlaceOrderResult>('/orders', {
       method: 'POST',
       body: {
         items: items.map((i) => ({ product_size: i.productSize, ...(i.quantity !== undefined ? { quantity: i.quantity } : {}) })),
@@ -133,6 +131,6 @@ export const realShopApi = {
       },
       headers: { 'Idempotency-Key': idempotencyKey },
     });
-    return { order: fromWireOrder(result.order), payment: result.payment ? fromWirePayment(result.payment) : null };
+    return { order: fromWireOrder(result.order), payment: result.payment ? fromWirePayment(result.payment) : null, replayed: status === 200 };
   },
 };

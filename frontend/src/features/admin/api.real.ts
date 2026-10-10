@@ -40,8 +40,7 @@ export const realAdminApi = {
     return fromWireRoleAssignment(r);
   },
 
-  // GAP: not yet in docs/API_CONTRACT.md — built against the exact shape
-  // given in the demo-polish task brief while the backend adds it.
+  // GET /audit, as documented in docs/API_CONTRACT.md (president only).
   async listAuditLog(params: AuditLogParams = {}, page = 1): Promise<Paginated<AuditLogItem>> {
     const result = await request<Paginated<WireAuditLogItem>>('/audit', { query: { page, action: params.action } });
     return { ...result, results: result.results.map(fromWireAuditLogItem) };

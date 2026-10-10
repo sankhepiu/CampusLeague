@@ -62,7 +62,7 @@ export const mockTicketsApi = {
       if (replay.userEmail !== user.email || replay.eventId !== eventId || replay.tier !== tierId) {
         throw new ApiRequestError({ code: 'idempotency_key_reused', message: 'This idempotency key already paid for a different purchase.' });
       }
-      return replay.result;
+      return { ...replay.result, replayed: true };
     }
 
     const found = getMockTier(eventId, tierId);
@@ -100,7 +100,7 @@ export const mockTicketsApi = {
       };
       // Pending attempts hold no seat and are never remembered against the
       // idempotency key, matching the contract.
-      return { order, payment: null, tickets: [] };
+      return { order, payment: null, tickets: [], replayed: false };
     }
 
     reserveMockSeats(eventId, tierId, quantity);
@@ -128,7 +128,7 @@ export const mockTicketsApi = {
       createdAt,
     };
     const payment: TicketPayment = { id: orderId + 1, amount: unitPrice * quantity, status: 'succeeded', gatewayRef, createdAt };
-    const result: PurchaseTicketsResult = { order, payment, tickets: tickets.map(toPublicTicket) };
+    const result: PurchaseTicketsResult = { order, payment, tickets: tickets.map(toPublicTicket), replayed: false };
 
     idempotency[idempotencyKey] = { userEmail: user.email, eventId, tier: tierId, quantity, result };
     saveIdempotency(idempotency);
@@ -138,7 +138,7 @@ export const mockTicketsApi = {
     // alongside membership and merch orders.
     addMockOrder(user.email, {
       ...order,
-      lines: [{ id: orderId, kind: 'ticket', plan: null, tier: tierId, productSize: null, qty: quantity, unitPrice, discount: 0 }],
+      lines: [{ id: orderId, kind: 'ticket', label: `${event.title} · ${tier.name}`, plan: null, tier: tierId, productSize: null, qty: quantity, unitPrice, discount: 0 }],
     });
 
     return result;

@@ -7,6 +7,7 @@ import { useAsync } from '../../core/hooks/useAsync';
 import { financeApi } from './api';
 import type { TraceEntry, TraceSource } from './types';
 import styles from './CoinTrail.module.scss';
+import { formatDateTime } from '../../core/utils/formatDateTime';
 
 interface CoinTrailProps {
   /** The figure to trace, or null when the panel should be closed. */
@@ -109,7 +110,7 @@ function FigureView({
           <button key={entry.id} type="button" className={styles.entryRow} onClick={() => onSelect(entry)}>
             <span className={styles.entryMeta}>
               <span className={styles.entryDescription}>{entry.description}</span>
-              <span className={styles.entryDate}>{new Date(entry.postedAt).toLocaleString('en-IN')}</span>
+              <span className={styles.entryDate}>{formatDateTime(entry.postedAt)}</span>
             </span>
             <span className={`${styles.entryAmount} ${entry.amount >= 0 ? styles.positive : styles.negative}`}>
               <Money paise={entry.amount} />
@@ -125,7 +126,7 @@ function EntryView({ entry }: { entry: TraceEntry }) {
   return (
     <>
       <h2 className={styles.figureTitle}>{entry.description}</h2>
-      <p className={styles.entryDate}>{new Date(entry.postedAt).toLocaleString('en-IN')}</p>
+      <p className={styles.entryDate}>{formatDateTime(entry.postedAt)}</p>
 
       <table className={styles.linesTable}>
         <thead>
@@ -177,7 +178,7 @@ function SourceView({ source }: { source: TraceSource }) {
                   <Money paise={t.pricePaid} />
                 </td>
                 <td>{t.status}</td>
-                <td>{t.checkedInAt ? new Date(t.checkedInAt).toLocaleString('en-IN') : '—'}</td>
+                <td>{t.checkedInAt ? formatDateTime(t.checkedInAt) : '—'}</td>
               </tr>
             ))}
           </tbody>

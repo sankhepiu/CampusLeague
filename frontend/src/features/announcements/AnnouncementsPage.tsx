@@ -10,6 +10,7 @@ import { useAuth } from '../../core/hooks/useAuth';
 import { accentVarForFeature } from '../../core/config/accents';
 import { announcementsApi } from './api';
 import styles from './AnnouncementsPage.module.scss';
+import { formatDateTime } from '../../core/utils/formatDateTime';
 
 export function AnnouncementsPage() {
   const { hasRole } = useAuth();
@@ -44,7 +45,7 @@ export function AnnouncementsPage() {
                 <Panel accent={accentVarForFeature('announcements')}>
                   <h3 className={styles.title}>{a.title}</h3>
                   <p className={styles.meta}>
-                    {a.author.name} · {new Date(a.publishedAt).toLocaleString('en-IN')} · {a.audience === 'members' ? 'Members only' : 'Everyone'}
+                    {a.author.name} · {formatDateTime(a.publishedAt)} · {a.audience === 'members' ? 'Members only' : 'Everyone'}
                   </p>
                 </Panel>
               </Link>

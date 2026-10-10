@@ -14,6 +14,7 @@ import { accentVarForFeature } from '../../core/config/accents';
 import { expensesApi } from './api';
 import type { Expense, ExpenseStatus } from './types';
 import styles from './ExpenseApprovalPage.module.scss';
+import { formatDateTime } from '../../core/utils/formatDateTime';
 
 const STATUS_VARIANT: Record<ExpenseStatus, StatusBadgeVariant> = { submitted: 'warning', approved: 'info', rejected: 'danger', paid: 'success' };
 const CATEGORY_LABEL: Record<string, string> = { event: 'Event', fundraiser: 'Fundraiser', general: 'General' };
@@ -126,7 +127,7 @@ function ExpenseRow({ expense, currentUserId, onChanged }: { expense: Expense; c
             <Money paise={expense.amount} />
           </span>
           <p className={styles.meta}>
-            {expense.requester.name} · {CATEGORY_LABEL[expense.category]} · {new Date(expense.createdAt).toLocaleString('en-IN')}
+            {expense.requester.name} · {CATEGORY_LABEL[expense.category]} · {formatDateTime(expense.createdAt)}
           </p>
           <p className={styles.meta}>{expense.description}</p>
           {expense.receiptUrl && (

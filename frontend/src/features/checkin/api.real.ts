@@ -1,5 +1,5 @@
 import { request } from '../../api/client';
-import type { CheckinRequest, CheckinResponse, CheckinResult, CheckinTicketRef } from './types';
+import type { CheckinRequest, CheckinResponse, CheckinResult, CheckinTicketRef, MemberScanResponse, MemberScanResult } from './types';
 import type { MembershipStatus } from '../auth/types';
 
 interface WireCheckinResponse {
@@ -31,5 +31,16 @@ export const realCheckinApi = {
       checkedInAt: result.checked_in_at,
       checkedInBy: result.checked_in_by,
     };
+  },
+
+  /** Looks up a member card. Same endpoint, different body and a smaller
+   * response; nothing is recorded, so it is safe to call repeatedly. */
+  async scanMember(memberToken: string): Promise<MemberScanResponse> {
+    const result = await request<{
+      result: MemberScanResult;
+      holder: { name: string; email: string } | null;
+      membership_status: MembershipStatus | null;
+    }>('/checkin', { method: 'POST', body: { member_token: memberToken } });
+    return { result: result.result, holder: result.holder, membershipStatus: result.membership_status };
   },
 };

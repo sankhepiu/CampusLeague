@@ -12,6 +12,7 @@ import { accentVarForFeature } from '../../core/config/accents';
 import { expensesApi } from './api';
 import type { ExpenseStatus } from './types';
 import styles from './MyExpensesPage.module.scss';
+import { formatDateOnly, formatDateTime } from '../../core/utils/formatDateTime';
 
 const STATUS_VARIANT: Record<ExpenseStatus, StatusBadgeVariant> = { submitted: 'warning', approved: 'info', rejected: 'danger', paid: 'success' };
 const CATEGORY_LABEL: Record<string, string> = { event: 'Event', fundraiser: 'Fundraiser', general: 'General' };
@@ -47,7 +48,7 @@ export function MyExpensesPage() {
                       <Money paise={expense.amount} />
                     </span>
                     <p className={styles.meta}>
-                      {CATEGORY_LABEL[expense.category]} · {new Date(expense.createdAt).toLocaleString('en-IN')}
+                      {CATEGORY_LABEL[expense.category]} · {formatDateTime(expense.createdAt)}
                     </p>
                     <p className={styles.meta}>{expense.description}</p>
                     {expense.receiptUrl && (
@@ -62,7 +63,7 @@ export function MyExpensesPage() {
                 {expense.approval && (
                   <div className={styles.approvalBox}>
                     {expense.approval.decision === 'approved' ? 'Approved' : 'Rejected'} by {expense.approval.approver.name} on{' '}
-                    {new Date(expense.approval.decidedAt).toLocaleDateString('en-IN')}
+                    {formatDateOnly(expense.approval.decidedAt)}
                     {expense.approval.reason && <> — {expense.approval.reason}</>}
                   </div>
                 )}

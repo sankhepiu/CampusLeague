@@ -5,7 +5,7 @@ export interface CartItem {
   productSizeId: number;
   productId: number;
   productName: string;
-  productImage: string;
+  productImage: string | null;
   sizeLabel: string;
   /** Snapshot of price at add-time, for an estimated subtotal only — the
    * authoritative total always comes from the server's order response. */

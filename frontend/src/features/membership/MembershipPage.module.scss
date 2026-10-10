@@ -109,3 +109,24 @@
   text-align: center;
   padding: 1rem 0;
 }
+
+// Member card summary: QR beside its explanation, stacking on narrow screens.
+.cardPanel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.cardTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.75rem;
+  margin: 0 0 0.6rem;
+}
+
+.cardText {
+  margin: 0 0 0.9rem;
+  max-width: 28rem;
+  line-height: 1.5;
+}

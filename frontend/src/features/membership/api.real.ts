@@ -1,4 +1,4 @@
-import { request, type Paginated } from '../../api/client';
+import { request, requestWithStatus, type Paginated } from '../../api/client';
 import type { MyMembership, Order, Payment, Plan, MembershipRecord, PurchaseRequest, PurchaseResult } from './types';
 
 interface WirePlan {
@@ -99,7 +99,7 @@ export const realMembershipApi = {
   },
 
   async purchase({ plan, testOutcome }: PurchaseRequest, idempotencyKey: string): Promise<PurchaseResult> {
-    const result = await request<WirePurchaseResult>('/memberships', {
+    const { status, data: result } = await requestWithStatus<WirePurchaseResult>('/memberships', {
       method: 'POST',
       body: { plan, ...(testOutcome ? { test_outcome: testOutcome } : {}) },
       headers: { 'Idempotency-Key': idempotencyKey },
@@ -108,6 +108,7 @@ export const realMembershipApi = {
       order: fromWireOrder(result.order),
       payment: result.payment ? fromWirePayment(result.payment) : null,
       membership: result.membership ? fromWireMembership(result.membership) : null,
+      replayed: status === 200,
     };
   },
 
@@ -117,6 +118,7 @@ export const realMembershipApi = {
       status: result.status,
       membership: result.membership ? fromWireMembership(result.membership) : null,
       paidUntil: result.paid_until,
+      memberQrToken: result.member_qr_token,
     };
   },
 };

@@ -54,8 +54,8 @@ export function ShopPage() {
               return (
                 <Link key={product.id} to={`/shop/${product.id}`} className={styles.card}>
                   <Panel accent={accentVarForFeature('shop')}>
-                    {product.image ? (
-                      <img src={product.image} alt={product.name} className={styles.productImage} />
+                    {product.imageUrl ? (
+                      <img src={product.imageUrl} alt={product.name} className={styles.productImage} loading="lazy" />
                     ) : (
                       <div className={styles.imagePlaceholder}>
                         <PixelIcon name="chest" size={40} />

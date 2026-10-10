@@ -24,14 +24,13 @@ interface ProductFormState {
   name: string;
   basePrice: string;
   description: string;
-  image: string;
   active: boolean;
 }
 
-const EMPTY_FORM: ProductFormState = { name: '', basePrice: '', description: '', image: '', active: true };
+const EMPTY_FORM: ProductFormState = { name: '', basePrice: '', description: '', active: true };
 
 function productToForm(p: Product): ProductFormState {
-  return { name: p.name, basePrice: (p.basePrice / 100).toString(), description: p.description, image: p.image, active: p.active };
+  return { name: p.name, basePrice: (p.basePrice / 100).toString(), description: p.description, active: p.active };
 }
 
 export function ShopAdminPage() {
@@ -79,7 +78,6 @@ export function ShopAdminPage() {
         name: form.name.trim(),
         basePrice: Math.round(Number(form.basePrice) * 100),
         description: form.description.trim(),
-        image: form.image.trim(),
         active: form.active,
       };
       if (isEdit) {
@@ -111,6 +109,8 @@ export function ShopAdminPage() {
     }
   };
 
+  const currentImageUrl = existing.status === 'success' ? existing.data.imageUrl : null;
+
   if (isEdit && existing.status === 'loading') return <Spinner fullPage label="Loading product…" />;
   if (isEdit && existing.status === 'error') return <ErrorBox error={existing.error!} onRetry={existing.reload} />;
 
@@ -133,13 +133,16 @@ export function ShopAdminPage() {
             error={fieldErrors.base_price ?? fieldErrors.basePrice}
           />
           <TextInput label="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} error={fieldErrors.description} />
-          <TextInput
-            label="Image URL"
-            hint="Optional — leave blank to show the placeholder icon."
-            value={form.image}
-            onChange={(e) => setForm((f) => ({ ...f, image: e.target.value }))}
-            error={fieldErrors.image}
-          />
+          {/* The picture is read-only: the contract has no upload endpoint,
+              the server supplies `image_url` (the seed's pixel art). */}
+          <div className={styles.imageRow}>
+            {currentImageUrl ? (
+              <img src={currentImageUrl} alt="Current product picture" className={styles.imagePreview} />
+            ) : (
+              <span className={styles.imageNone}>No picture</span>
+            )}
+            <span className={styles.imageNote}>Pictures are supplied by the server. Uploading one isn't supported yet.</span>
+          </div>
           <label className={styles.checkboxRow}>
             <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} />
             Active (visible to everyone)

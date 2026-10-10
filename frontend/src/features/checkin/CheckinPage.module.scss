@@ -87,6 +87,16 @@
   color: #ffc1c8;
 }
 
+// Small caption above the icon saying what kind of code was scanned.
+.resultKind {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.8;
+  margin: 0 0 1rem;
+}
+
 .resultIcon {
   font-size: 4rem;
   line-height: 1;

@@ -6,22 +6,18 @@ import { EmptyState } from '../../components/EmptyState/EmptyState';
 import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { Spinner } from '../../components/Spinner/Spinner';
 import { Money } from '../../components/Money/Money';
-import { SelectInput } from '../../components/FormField/SelectInput';
+import { QRCode } from '../../components/QRCode/QRCode';
+import { ReplayNote, TestPayment } from '../../components/TestPayment/TestPayment';
+import { isRetryablePaymentError } from '../../components/TestPayment/paymentErrors';
 import type { ApiError } from '../../api/client';
 import { useAsync } from '../../core/hooks/useAsync';
 import { accentVarForFeature } from '../../core/config/accents';
 import { membershipApi } from './api';
-import { env } from '../../core/config/env';
 import { formatDate, daysUntil } from './dates';
 import type { PaymentTestOutcome, Plan, PurchaseResult } from './types';
 import styles from './MembershipPage.module.scss';
 
 const RENEWAL_WINDOW_DAYS = 30;
-const TEST_OUTCOMES: { value: PaymentTestOutcome; label: string }[] = [
-  { value: 'success', label: 'Success' },
-  { value: 'failure', label: 'Failure' },
-  { value: 'pending', label: 'Pending' },
-];
 
 type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error';
 
@@ -100,6 +96,31 @@ export function MembershipPage() {
         </div>
       )}
 
+      {myMembership.status === 'success' && (
+        <Panel accent={accentVarForFeature('membership')} className={styles.cardPanel}>
+          {myMembership.data.memberQrToken ? (
+            <>
+              <QRCode value={myMembership.data.memberQrToken} size={150} />
+              <div>
+                <h3 className={styles.cardTitle}>Your member card</h3>
+                <p className={styles.cardText}>
+                  Show this code at the door and staff can confirm your membership.
+                  {status === 'lapsed' && ' Your membership has lapsed, so it currently scans as "not a member".'}
+                </p>
+                <Link to="/membership/card" className={styles.button} style={{ textDecoration: 'none', display: 'inline-block' }}>
+                  Open Full Card
+                </Link>
+              </div>
+            </>
+          ) : (
+            <div>
+              <h3 className={styles.cardTitle}>Join to get your card</h3>
+              <p className={styles.cardText}>Buy a plan below and your member card, with its QR code for the door, appears here.</p>
+            </div>
+          )}
+        </Panel>
+      )}
+
       {showRenewalPrompt && current && (
         <Panel accent="var(--cl-coral)" style={{ marginBottom: '1.5rem' }}>
           <strong>{status === 'lapsed' ? 'Your membership has lapsed.' : 'Your membership is expiring soon.'}</strong>{' '}
@@ -143,6 +164,7 @@ export function MembershipPage() {
               <p>
                 <strong>Payment successful!</strong> You're now covered through {formatDate(result.membership.endDate)}.
               </p>
+              {result.replayed && <ReplayNote />}
               <Link to="/membership/card" className={styles.button} style={{ textDecoration: 'none', display: 'inline-block' }}>
                 View Member Card
               </Link>
@@ -165,23 +187,13 @@ export function MembershipPage() {
                 <Money paise={selectedPlan.price} />
               </div>
 
-              {phase === 'error' && error && <ErrorBox error={error} onRetry={retry} />}
+              <TestPayment outcome={testOutcome} onChange={setTestOutcome} disabled={phase === 'submitting'} />
 
-              {env.useMockApi && (
-                <div className={styles.testOutcome}>
-                  <SelectInput
-                    label="Mock payment outcome"
-                    hint="Dev-only control — picks what the mock gateway returns."
-                    value={testOutcome}
-                    onChange={(e) => setTestOutcome(e.target.value as PaymentTestOutcome)}
-                    options={TEST_OUTCOMES.map((o) => ({ value: o.value, label: o.label }))}
-                  />
-                </div>
-              )}
+              {phase === 'error' && error && <ErrorBox error={error} onRetry={isRetryablePaymentError(error) ? retry : undefined} />}
 
               <div className={styles.checkoutActions}>
                 <button type="button" className={styles.button} onClick={() => void confirmPurchase()} disabled={phase === 'submitting'}>
-                  {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Confirm Payment'}
+                  {phase === 'submitting' ? <Spinner size={16} label="Processing" /> : 'Pay (Test Mode)'}
                 </button>
                 <button
                   type="button"

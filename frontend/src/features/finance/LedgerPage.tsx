@@ -10,6 +10,7 @@ import { ACCOUNT_LIST } from './accountCodes';
 import { CoinTrail } from './CoinTrail';
 import type { LedgerEntry, LedgerKind } from './types';
 import styles from './LedgerPage.module.scss';
+import { formatDateOnly } from '../../core/utils/formatDateTime';
 
 const KIND_OPTIONS: { value: LedgerKind | ''; label: string }[] = [
   { value: '', label: 'All kinds' },
@@ -56,7 +57,7 @@ export function LedgerPage() {
   );
 
   const columns: DataTableColumn<LedgerEntry>[] = [
-    { key: 'date', header: 'Date', render: (e) => new Date(e.postedAt).toLocaleDateString('en-IN') },
+    { key: 'date', header: 'Date', render: (e) => formatDateOnly(e.postedAt) },
     { key: 'description', header: 'Description', wrap: true, render: (e) => e.description },
     { key: 'kind', header: 'Kind', render: (e) => e.kind.replace(/_/g, ' ') },
     { key: 'event', header: 'Event', render: (e) => (e.event !== null ? `#${e.event}` : '—') },

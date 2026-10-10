@@ -4,6 +4,7 @@ import type { Order, OrderLine } from './types';
 interface WireOrderLine {
   id: number;
   kind: OrderLine['kind'];
+  label: string;
   plan: number | null;
   tier: number | null;
   product_size: number | null;
@@ -24,7 +25,7 @@ interface WireOrder {
 }
 
 function fromWireLine(l: WireOrderLine): OrderLine {
-  return { id: l.id, kind: l.kind, plan: l.plan, tier: l.tier, productSize: l.product_size, qty: l.qty, unitPrice: l.unit_price, discount: l.discount };
+  return { id: l.id, kind: l.kind, label: l.label, plan: l.plan, tier: l.tier, productSize: l.product_size, qty: l.qty, unitPrice: l.unit_price, discount: l.discount };
 }
 
 function fromWireOrder(o: WireOrder): Order {
