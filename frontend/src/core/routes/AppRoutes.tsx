@@ -15,9 +15,15 @@ import { EventDetailPage } from '../../features/events/EventDetailPage';
 import { EventAdminPage } from '../../features/events/EventAdminPage';
 import { TicketsPage } from '../../features/tickets/TicketsPage';
 import { ShopPage } from '../../features/shop/ShopPage';
+import { ProductDetailPage } from '../../features/shop/ProductDetailPage';
+import { CartPage } from '../../features/shop/CartPage';
+import { ShopAdminPage } from '../../features/shop/ShopAdminPage';
 import { OrdersPage } from '../../features/orders/OrdersPage';
 import { VolunteeringPage } from '../../features/volunteering/VolunteeringPage';
 import { AnnouncementsPage } from '../../features/announcements/AnnouncementsPage';
+import { AnnouncementDetailPage } from '../../features/announcements/AnnouncementDetailPage';
+import { AnnouncementComposerPage } from '../../features/announcements/AnnouncementComposerPage';
+import { AnnouncementDeliveriesPage } from '../../features/announcements/AnnouncementDeliveriesPage';
 import { CheckinPage } from '../../features/checkin/CheckinPage';
 import { ExpensesPage } from '../../features/expenses/ExpensesPage';
 import { FinancePage } from '../../features/finance/FinancePage';
@@ -33,12 +39,14 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
 
-      {/* Public per the contract (GET /events, GET /events/{id} — "Who: Public").
-          Still rendered inside AppLayout for a consistent header/footer;
-          TopBar itself handles the logged-out ("guest") case. */}
+      {/* Public per the contract (GET /events, GET /announcements — "Who:
+          Public"). Still rendered inside AppLayout for a consistent
+          header/footer; TopBar itself handles the logged-out case. */}
       <Route element={<AppLayout />}>
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/:id" element={<EventDetailPage />} />
+        <Route path="/announcements" element={<AnnouncementsPage />} />
+        <Route path="/announcements/:id" element={<AnnouncementDetailPage />} />
       </Route>
 
       <Route
@@ -54,6 +62,8 @@ export function AppRoutes() {
         <Route path="/membership/card" element={<MemberCardPage />} />
         <Route path="/tickets" element={<TicketsPage />} />
         <Route path="/shop" element={<ShopPage />} />
+        <Route path="/shop/cart" element={<CartPage />} />
+        <Route path="/shop/:id" element={<ProductDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/volunteering" element={<VolunteeringPage />} />
 
@@ -73,15 +83,39 @@ export function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
         <Route
-          path="/announcements"
+          path="/shop/new"
           element={
-            <ProtectedRoute roles={FEATURE_ACCESS.announcements}>
-              <AnnouncementsPage />
+            <ProtectedRoute roles={FEATURE_ACCESS.shopAdmin}>
+              <ShopAdminPage />
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/shop/:id/edit"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.shopAdmin}>
+              <ShopAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/announcements/new"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.announcementCompose}>
+              <AnnouncementComposerPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/announcements/:id/deliveries"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.announcementCompose}>
+              <AnnouncementDeliveriesPage />
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/members"
           element={

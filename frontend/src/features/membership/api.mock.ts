@@ -1,5 +1,6 @@
 import { ApiRequestError } from '../../api/client';
 import { getCurrentMockUser, updateUser } from '../auth/mockUsers';
+import { addMockOrder } from '../orders/mockOrdersStore';
 import { addDays, addMonths, today } from './dates';
 import type { MembershipRecord, MyMembership, Order, Payment, Plan, PurchaseRequest, PurchaseResult } from './types';
 
@@ -91,6 +92,18 @@ function effectiveRecord(record: MembershipRecord): MembershipRecord {
     return { ...record, status: 'lapsed' };
   }
   return record;
+}
+
+/** Synchronous lookup other mocks (shop) need to apply a plan-specific
+ * discount percentage — the contract computes merch price from "their
+ * plan's merch_discount_pct", not a flat rate, so the caller needs to know
+ * which plan, not just whether membership is active. */
+export function getActiveMembershipPlanForCurrentUser(): Plan | null {
+  const user = getCurrentMockUser();
+  if (!user) return null;
+  const record = loadState().memberships[user.email];
+  if (!record) return null;
+  return effectiveRecord(record).status === 'active' ? record.plan : null;
 }
 
 export const mockMembershipApi = {
@@ -190,6 +203,10 @@ export const mockMembershipApi = {
     state.memberships[user.email] = membership;
     const result: PurchaseResult = { order, payment, membership };
     state.idempotency[idempotencyKey] = { userEmail: user.email, plan: plan.id, result };
+    addMockOrder(user.email, {
+      ...order,
+      lines: order.lines.map((l) => ({ ...l, kind: 'membership' as const, tier: null, productSize: null, discount: 0 })),
+    });
     saveState(state);
     updateUser(user.email, { membershipStatus: 'active' });
 

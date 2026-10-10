@@ -1,0 +1,87 @@
+@use '../../styles/mixins';
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.successBox {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.deliveryRow {
+  display: flex;
+  gap: 1.25rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+  margin: 1rem 0;
+}
+
+.failedWarning {
+  color: var(--cl-color-warning);
+  margin: 1rem 0;
+}
+
+.linkButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.6rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  text-decoration: none;
+  display: inline-block;
+  margin: 0 0.4rem;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 8rem;
+  font-family: var(--cl-font-body);
+  font-size: 1.1rem;
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  border: 3px solid var(--cl-color-border);
+  padding: 0.55rem 0.7rem;
+  resize: vertical;
+}
+
+.textarea:focus-visible {
+  outline: 3px solid var(--cl-color-focus);
+  outline-offset: 1px;
+  border-color: var(--cl-color-focus);
+}
+
+.fieldWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
+.label {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+}
+
+.error {
+  color: var(--cl-color-danger);
+  font-size: 0.85rem;
+  margin: 0;
+}
