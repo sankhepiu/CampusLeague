@@ -51,6 +51,10 @@ def run_daily_job(now=None):
         .filter(status=ACTIVE, start_date__lte=today, end_date__gte=today,
                 end_date__lte=today + timedelta(days=max(REMINDER_WINDOWS)))
         .select_related('user', 'plan')
+        # A fixed order (soonest to expire first): without ORDER BY the
+        # database may return rows in any order, and which reminder goes out
+        # first, or fails first, would vary from run to run.
+        .order_by('end_date', 'id')
     )
     for membership in expiring:
         window_start = _window_start(membership, today)
