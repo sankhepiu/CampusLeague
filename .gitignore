@@ -1,0 +1,27 @@
+# Secrets and local environment (keep .env.example files tracked)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.coverage
+htmlcov/
+
+# Django
+backend/media/
+backend/staticfiles/
+*.sqlite3
+*.log
+
+# Node (frontend)
+node_modules/
+dist/
+
+# OS and editors
+.DS_Store
+.vscode/
+.idea/
