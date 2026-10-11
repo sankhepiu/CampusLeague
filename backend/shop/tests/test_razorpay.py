@@ -101,9 +101,28 @@ class RazorpayTestCase(ApiTestCase):
 
 
 class PaymentConfigTests(RazorpayTestCase):
-    def test_needs_login(self):
+    # The endpoint used to need a login. The frontend reads it on page load,
+    # before login, so it is public now.
+
+    @RAZORPAY_ON
+    def test_anonymous_gets_the_gateway_and_key_id_and_never_the_secret(self):
         self.client.credentials()
-        self.assert_error(self.client.get('/api/payments/config'), 401, 'not_authenticated')
+        response = self.client.get('/api/payments/config')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), {'gateway': 'razorpay', 'key_id': KEY_ID})
+        self.assertNotIn(KEY_SECRET, response.content.decode())
+
+    @RAZORPAY_ON
+    def test_a_stale_token_does_not_turn_it_into_a_401(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Token not-a-real-token')
+        response = self.client.get('/api/payments/config')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(set(response.json()), {'gateway', 'key_id'})
+
+    def test_writes_are_not_allowed(self):
+        self.client.credentials()
+        for method in ['post', 'put', 'patch', 'delete']:
+            self.assert_error(getattr(self.client, method)('/api/payments/config'), 405, 'method_not_allowed')
 
     @override_settings(PAYMENT_GATEWAY='mock', RAZORPAY_KEY_ID=KEY_ID, RAZORPAY_KEY_SECRET=KEY_SECRET)
     def test_mock_gateway_reports_no_key(self):

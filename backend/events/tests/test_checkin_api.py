@@ -59,6 +59,8 @@ class CheckInTests(CheckInTestCase):
 
         self.assertEqual(second['result'], 'already_checked_in')
         self.assertEqual(second['checked_in_at'], first['checked_in_at'])
+        # Sent in the site's time zone like every other timestamp, not UTC "Z".
+        self.assertTrue(first['checked_in_at'].endswith('+05:30'), first['checked_in_at'])
         self.assertEqual(second['checked_in_by'], self.manager.name)   # not the president
         self.assertEqual(CheckIn.objects.count(), 1)
 
