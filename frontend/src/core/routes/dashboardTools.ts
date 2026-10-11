@@ -11,10 +11,10 @@ export interface DashboardTool {
 }
 
 /** Each role's own tools, shown first on their dashboard, ahead of "My
- * account". Browsing-only areas (Events, Shop, Volunteering, Announcements)
- * are deliberately left off a staff dashboard — they're still one click away
- * in the top nav — so the dashboard stays focused on what that role is
- * actually there to do. */
+ * account". Everything else the role's navbar offers (Events, Shop,
+ * Volunteering, Announcements, and any page not listed here) is added by
+ * HomePage in a third "Club" section, worked out from FEATURE_ACCESS, so
+ * the dashboard always covers the whole navbar. */
 export const ROLE_TOOLS: Partial<Record<Role, DashboardTool[]>> = {
   president: [
     { key: 'members', path: '/members', label: 'Members', icon: 'badge', accentKey: 'members' },

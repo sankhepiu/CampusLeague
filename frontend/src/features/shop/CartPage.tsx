@@ -21,6 +21,7 @@ import type { CouponValidateResponse } from '../coupons/types';
 import { razorpayErrorMessage } from '../payments/errors';
 import type { RazorpayVerifyFields } from '../payments/types';
 import type { PaymentTestOutcome, PlaceOrderResult } from './types';
+import { LIMIT_REACHED_MESSAGE, MAX_PER_ITEM } from './limits';
 import styles from './CartPage.module.scss';
 
 type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error' | 'cancelled';
@@ -281,7 +282,8 @@ export function CartPage() {
                   type="button"
                   className={styles.qtyButton}
                   onClick={() => updateQuantity(item.productSizeId, item.quantity + 1)}
-                  disabled={item.quantity >= 10}
+                  disabled={item.quantity >= MAX_PER_ITEM}
+                  title={item.quantity >= MAX_PER_ITEM ? LIMIT_REACHED_MESSAGE : undefined}
                 >
                   +
                 </button>
@@ -310,6 +312,10 @@ export function CartPage() {
 
         <OrderSummaryBreakdown breakdown={breakdown} couponCode={appliedCoupon} couponDiscount={couponDiscount} total={grandTotal} />
         <p className={styles.estimateNote}>Final subtotal, discount and total are decided by the server when you pay.</p>
+        <p className={styles.estimateNote}>
+          Limit {MAX_PER_ITEM} per item.
+          {items.some((i) => i.quantity >= MAX_PER_ITEM) ? ` ${LIMIT_REACHED_MESSAGE.replace('this item', 'at least one item')}` : ''}
+        </p>
 
         {/* A sold-out or unavailable item sends the buyer back here to fix the cart. */}
         {phase === 'error' && error && !isRetryablePaymentError(error) && <ErrorBox error={error} />}

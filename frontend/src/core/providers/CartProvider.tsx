@@ -1,5 +1,6 @@
 import { createContext, useCallback, useMemo, type ReactNode } from 'react';
 import { useLocalStorageState } from '../hooks/useLocalStorageState';
+import { LIMIT_REACHED_MESSAGE, MAX_PER_ITEM } from '../../features/shop/limits';
 
 export interface CartItem {
   productSizeId: number;
@@ -19,11 +20,14 @@ export interface CartItem {
 }
 
 const MAX_LINES = 20;
-const MAX_QTY = 10;
+const MAX_QTY = MAX_PER_ITEM;
 
 interface CartContextValue {
   items: CartItem[];
-  addItem: (item: Omit<CartItem, 'quantity'>, quantity: number) => { ok: boolean; reason?: string };
+  /** `added` is how many actually went in. When that is fewer than asked
+   * for (the per-item limit), `reason` says so: an add is never silently
+   * dropped or cut short. */
+  addItem: (item: Omit<CartItem, 'quantity'>, quantity: number) => { ok: boolean; added: number; reason?: string };
   updateQuantity: (productSizeId: number, quantity: number) => void;
   removeItem: (productSizeId: number) => void;
   clear: () => void;
@@ -36,23 +40,31 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useLocalStorageState<CartItem[]>('campusleague.cart', []);
 
   const addItem = useCallback(
-    (item: Omit<CartItem, 'quantity'>, quantity: number): { ok: boolean; reason?: string } => {
-      let result: { ok: boolean; reason?: string } = { ok: true };
+    (item: Omit<CartItem, 'quantity'>, quantity: number): { ok: boolean; added: number; reason?: string } => {
+      // Decided from the cart as it is now, before the update is queued, so
+      // the caller gets the real outcome to show.
+      const existing = items.find((i) => i.productSizeId === item.productSizeId);
+      const inCart = existing?.quantity ?? 0;
+      if (!existing && items.length >= MAX_LINES) {
+        return { ok: false, added: 0, reason: `Your cart can hold at most ${MAX_LINES} different sizes.` };
+      }
+      // The limit is on the total: what is in the cart plus what is added.
+      const added = Math.max(0, Math.min(quantity, MAX_QTY - inCart));
+      if (added === 0) return { ok: false, added: 0, reason: LIMIT_REACHED_MESSAGE };
+
       setItems((prev) => {
-        const existing = prev.find((i) => i.productSizeId === item.productSizeId);
-        if (existing) {
-          const nextQty = Math.min(MAX_QTY, existing.quantity + quantity);
+        const current = prev.find((i) => i.productSizeId === item.productSizeId);
+        if (current) {
+          const nextQty = Math.min(MAX_QTY, current.quantity + added);
           return prev.map((i) => (i.productSizeId === item.productSizeId ? { ...i, quantity: nextQty } : i));
         }
-        if (prev.length >= MAX_LINES) {
-          result = { ok: false, reason: `Your cart can hold at most ${MAX_LINES} different sizes.` };
-          return prev;
-        }
-        return [...prev, { ...item, quantity: Math.min(MAX_QTY, quantity) }];
+        return [...prev, { ...item, quantity: added }];
       });
-      return result;
+      return added < quantity
+        ? { ok: true, added, reason: `Only ${added} added: the limit is ${MAX_QTY} per item and you already had ${inCart} in your cart.` }
+        : { ok: true, added };
     },
-    [setItems],
+    [items, setItems],
   );
 
   const updateQuantity = useCallback(
