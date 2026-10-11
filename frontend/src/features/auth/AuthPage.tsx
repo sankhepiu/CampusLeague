@@ -359,7 +359,6 @@ export function AuthPage({ initialTab }: AuthPageProps) {
           <form id="auth-panel-signup" role="tabpanel" aria-labelledby="auth-tab-signup" onSubmit={onSignupSubmit} noValidate>
             {clubs.length > 1 && (
               <div className={styles.clubRow}>
-                <span className={styles.clubDot} style={{ background: chosenClub?.color }} aria-hidden="true" />
                 <SelectInput
                   label="Club"
                   required
