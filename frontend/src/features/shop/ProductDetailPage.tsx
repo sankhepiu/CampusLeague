@@ -11,6 +11,7 @@ import { useAuth } from '../../core/hooks/useAuth';
 import { useCart } from '../../core/hooks/useCart';
 import { shopApi } from './api';
 import type { ProductSize } from './types';
+import { LIMIT_REACHED_MESSAGE, MAX_PER_ITEM, limitNote } from './limits';
 import styles from './ProductDetailPage.module.scss';
 
 const LOW_STOCK_THRESHOLD = 3;
@@ -19,7 +20,7 @@ export function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const productId = Number(id);
   const { user, hasRole } = useAuth();
-  const { addItem } = useCart();
+  const { addItem, items: cartItems } = useCart();
 
   const { status, data: product, error, reload } = useAsync(() => shopApi.getProduct(productId), [productId]);
   const [selectedSize, setSelectedSize] = useState<ProductSize | null>(null);
@@ -34,6 +35,15 @@ export function ProductDetailPage() {
 
   const onSale = product.salePct > 0;
   const salePrice = product.basePrice - Math.floor((product.basePrice * product.salePct) / 100);
+
+  // The limit of 10 is on the total: what is already in the cart for this
+  // size plus what is being added now.
+  const inCart = selectedSize ? (cartItems.find((i) => i.productSizeId === selectedSize.id)?.quantity ?? 0) : 0;
+  const canAdd = selectedSize ? Math.max(0, Math.min(MAX_PER_ITEM - inCart, selectedSize.stock)) : 0;
+  const atLimit = inCart >= MAX_PER_ITEM;
+  // Never more than can still be added, even if the cart changed since the
+  // stepper was last touched.
+  const quantityToAdd = Math.min(quantity, Math.max(1, canAdd));
 
   const selectSize = (size: ProductSize) => {
     if (size.stock === 0) return;
@@ -55,9 +65,14 @@ export function ProductDetailPage() {
         unitBasePriceEstimate: product.basePrice,
         unitSalePriceEstimate: salePrice,
       },
-      quantity,
+      quantityToAdd,
     );
-    setAddedNote(result.ok ? `Added ${quantity} × ${selectedSize.size} to your cart.` : (result.reason ?? 'Could not add to cart.'));
+    setAddedNote(
+      result.ok
+        ? `Added ${result.added} × ${selectedSize.size} to your cart.${result.reason ? ` ${result.reason}` : ''}`
+        : (result.reason ?? 'Could not add to cart.'),
+    );
+    setQuantity(1);
   };
 
   return (
@@ -130,26 +145,33 @@ export function ProductDetailPage() {
             <>
               <div className={styles.quantityRow}>
                 <span>Quantity</span>
-                <button type="button" className={styles.qtyButton} onClick={() => setQuantity((q) => Math.max(1, q - 1))} disabled={quantity <= 1}>
-                  −
-                </button>
-                <span>{quantity}</span>
                 <button
                   type="button"
                   className={styles.qtyButton}
-                  onClick={() => setQuantity((q) => Math.min(10, q + 1, selectedSize.stock))}
-                  disabled={quantity >= 10 || quantity >= selectedSize.stock}
+                  onClick={() => setQuantity(Math.max(1, quantityToAdd - 1))}
+                  disabled={quantityToAdd <= 1 || atLimit}
+                >
+                  −
+                </button>
+                <span>{atLimit ? 0 : quantityToAdd}</span>
+                <button
+                  type="button"
+                  className={styles.qtyButton}
+                  onClick={() => setQuantity(Math.min(canAdd, quantityToAdd + 1))}
+                  disabled={quantityToAdd >= canAdd}
                 >
                   +
                 </button>
               </div>
 
+              <p className={styles.stockNote}>{atLimit ? LIMIT_REACHED_MESSAGE : limitNote(inCart)}</p>
+
               <button
                 type="button"
                 className={styles.addButton}
-                disabled={!user}
+                disabled={!user || atLimit || canAdd === 0}
                 onClick={addToCart}
-                title={!user ? 'Log in to add items to your cart' : undefined}
+                title={!user ? 'Log in to add items to your cart' : atLimit ? LIMIT_REACHED_MESSAGE : undefined}
               >
                 Add to Cart
               </button>

@@ -50,6 +50,11 @@ export function HomePage() {
   // A plain member keeps the original full nav grid — Events/Shop/
   // Volunteering/Announcements have nowhere else to live for them.
   if (roleTools.length > 0) {
+    // Every page this user's navbar offers must also have a card here. Both
+    // lists come from FEATURE_ACCESS (via navItemsForRoles), so whatever
+    // the two sections above do not already link to is shown in a third.
+    const shownPaths = new Set([...roleTools, ...MY_ACCOUNT_TOOLS].map((tool) => tool.path));
+    const otherPages = navItemsForRoles(user.roles).filter((item) => !shownPaths.has(item.path));
     return (
       <div className={styles.wrapper}>
         <p className={styles.greeting}>Welcome back, {user.name.split(' ')[0]}</p>
@@ -71,6 +76,16 @@ export function HomePage() {
             ))}
           </div>
         </div>
+        {otherPages.length > 0 && (
+          <div className={styles.section}>
+            <h2 className={styles.sectionTitle}>Club</h2>
+            <div className={styles.grid}>
+              {otherPages.map((item) => (
+                <TiltCard key={item.path} to={item.path} icon={item.icon} label={item.label} accent={accentVarForFeature(item.key)} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
