@@ -11,10 +11,10 @@ import { SelectInput } from '../../components/FormField/SelectInput';
 import { PixelIcon } from '../../components/PixelIcon';
 import { useAsync } from '../../core/hooks/useAsync';
 import { useAuth } from '../../core/hooks/useAuth';
+import { useCart } from '../../core/hooks/useCart';
 import { accentVarForFeature } from '../../core/config/accents';
 import { shopApi } from './api';
 import type { ProductCategory } from './types';
-import { ViewCartButton } from './ViewCartButton';
 import styles from './ShopPage.module.scss';
 
 const CATEGORY_FILTER_OPTIONS: { value: ProductCategory | ''; label: string }[] = [
@@ -27,11 +27,13 @@ const CATEGORY_FILTER_OPTIONS: { value: ProductCategory | ''; label: string }[] 
 
 export function ShopPage() {
   const { hasRole } = useAuth();
+  const { items } = useCart();
   const [page, setPage] = useState(1);
   const [category, setCategory] = useState<ProductCategory | ''>('');
   const { status, data, error, reload } = useAsync(() => shopApi.listProducts(page), [page]);
 
   const canManage = hasRole('president', 'treasurer', 'event_manager');
+  const cartCount = items.reduce((sum, i) => sum + i.quantity, 0);
   const filtered = status === 'success' ? data.results.filter((p) => !category || p.category === category) : [];
 
   return (
@@ -42,6 +44,9 @@ export function ShopPage() {
             + New Product
           </Link>
         )}
+        <Link to="/shop/cart" className={styles.headerButton}>
+          Cart{cartCount > 0 ? ` (${cartCount})` : ''}
+        </Link>
       </div>
 
       <div className={styles.filterRow}>
@@ -82,7 +87,6 @@ export function ShopPage() {
                       <Money paise={product.price} />
                       {product.price < product.basePrice && <span className={styles.strike}>₹{(product.basePrice / 100).toFixed(2)}</span>}
                     </div>
-                    <p className={styles.stockLine}>In stock: {product.sizes.reduce((sum, s) => sum + s.stock, 0)}</p>
                     {!product.active && (
                       <div className={styles.inactiveBadge}>
                         <StatusBadge variant="warning">Inactive (staff only)</StatusBadge>
@@ -109,7 +113,6 @@ export function ShopPage() {
           </div>
         </>
       )}
-      <ViewCartButton />
     </PageShell>
   );
 }

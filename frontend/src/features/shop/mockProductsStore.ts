@@ -1,6 +1,5 @@
 import { ApiRequestError } from '../../api/client';
 import { getActiveMembershipPlanForCurrentUser } from '../membership/api.mock';
-import { pickupOrDefault } from './pickup';
 import type { Product, ProductCategory, ProductDraft, ProductSize, RestockRequest, SizeLabel } from './types';
 
 interface MockProductSize extends ProductSize {}
@@ -136,7 +135,6 @@ export function toPublicProduct(p: MockProduct): Product {
     name: p.name,
     description: p.description,
     category: p.category ?? 'apparel',
-    pickupLocation: pickupOrDefault(undefined),
     basePrice: p.basePrice,
     salePct: p.salePct ?? 0,
     price: priceForCurrentUser(p.basePrice, p.salePct),

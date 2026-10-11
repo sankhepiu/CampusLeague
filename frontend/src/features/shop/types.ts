@@ -12,8 +12,6 @@ export interface Product {
   name: string;
   description: string;
   category: ProductCategory;
-  /** Where it is collected; always set (falls back when the server omits it). */
-  pickupLocation: string;
   basePrice: number; // paise, before any discount
   salePct: number; // 0-90: percent off for everyone, 0 means not on sale
   price: number; // paise — what the caller pays now (server-decided)

@@ -12,7 +12,6 @@ import { useCart } from '../../core/hooks/useCart';
 import { shopApi } from './api';
 import type { ProductSize } from './types';
 import { LIMIT_REACHED_MESSAGE, MAX_PER_ITEM, limitNote } from './limits';
-import { ViewCartButton } from './ViewCartButton';
 import styles from './ProductDetailPage.module.scss';
 
 const LOW_STOCK_THRESHOLD = 3;
@@ -65,7 +64,6 @@ export function ProductDetailPage() {
         unitPriceEstimate: product.price,
         unitBasePriceEstimate: product.basePrice,
         unitSalePriceEstimate: salePrice,
-        pickupLocation: product.pickupLocation,
       },
       quantityToAdd,
     );
@@ -132,14 +130,10 @@ export function ProductDetailPage() {
                 disabled={size.stock === 0}
                 onClick={() => selectSize(size)}
               >
-                {`${size.size} · ${size.stock}`}
+                {size.stock === 0 ? `${size.size} — Sold out` : size.size}
               </button>
             ))}
           </div>
-
-          {!selectedSize && <p className={styles.stockNote}>In stock: {product.sizes.reduce((sum, s) => sum + s.stock, 0)}</p>}
-
-          <p className={styles.stockNote}>Collect from: {product.pickupLocation}</p>
 
           {selectedSize && (
             <p className={`${styles.stockNote} ${selectedSize.stock <= LOW_STOCK_THRESHOLD ? styles.lowStock : ''}`}>
@@ -184,14 +178,13 @@ export function ProductDetailPage() {
               {!user && <p className={styles.stockNote}>Log in to add items to your cart.</p>}
               {addedNote && (
                 <p className={styles.addedNote}>
-                  {addedNote}
+                  {addedNote} <Link to="/shop/cart">View Cart</Link>
                 </p>
               )}
             </>
           )}
         </div>
       </div>
-      <ViewCartButton />
     </PageShell>
   );
 }
