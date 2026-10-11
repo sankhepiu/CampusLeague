@@ -63,6 +63,22 @@
   margin-bottom: 1.5rem;
 }
 
+.couponValid {
+  color: var(--cl-color-success, #5fd68a);
+  font-size: 0.85rem;
+  margin: 0.4rem 0;
+}
+
+.couponInvalid {
+  color: var(--cl-color-danger);
+  font-size: 0.85rem;
+  margin: 0.4rem 0;
+}
+
+.breakdown {
+  margin: 1rem 0;
+}
+
 .summaryRow {
   display: flex;
   justify-content: space-between;

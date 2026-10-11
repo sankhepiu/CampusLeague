@@ -1,3 +1,5 @@
+import type { Pass } from '../tickets/types';
+
 export type EventStatus = 'draft' | 'on_sale' | 'closed';
 
 export interface Tier {
@@ -7,9 +9,13 @@ export interface Tier {
   memberPrice: number; // paise
   price: number; // paise — what the caller pays now (server-decided)
   capacity: number;
+  sold: number;
   seatsLeft: number;
   saleOpens: string | null;
   saleCloses: string | null;
+  /** The event is on_sale and now is inside this tier's window — says
+   * nothing about seats, a tier can be open and sold out at once. */
+  saleOpen: boolean;
 }
 
 export interface EventSummary {
@@ -28,6 +34,20 @@ export interface EventItem {
   capacityTotal: number;
   status: EventStatus;
   tiers: Tier[];
+}
+
+/** The extra fields `GET /events/{id}` adds on top of `EventItem` — not
+ * present on the list endpoint. `revenue`/`attendancePct` are present only
+ * for president/event manager, absent (not merely null) for everyone else. */
+export interface EventDetail extends EventItem {
+  organiser: { name: string };
+  capacity: number;
+  sold: number;
+  seatsLeft: number;
+  checkedIn: number;
+  myPasses: Pass[];
+  revenue?: number; // paise
+  attendancePct?: number | null;
 }
 
 export interface EventDraft {

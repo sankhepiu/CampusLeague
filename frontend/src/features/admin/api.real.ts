@@ -1,5 +1,5 @@
 import { request, type Paginated } from '../../api/client';
-import type { AuditActor, AuditLogItem, AuditLogParams, RoleAssignment, RoleAssignmentDraft } from './types';
+import type { AuditActor, AuditLogItem, AuditLogParams, RoleAssignment } from './types';
 
 interface WireRoleAssignment {
   id: number;
@@ -33,11 +33,6 @@ export const realAdminApi = {
   async listRoles(page = 1): Promise<Paginated<RoleAssignment>> {
     const result = await request<Paginated<WireRoleAssignment>>('/roles', { query: { page } });
     return { ...result, results: result.results.map(fromWireRoleAssignment) };
-  },
-
-  async assignRole(draft: RoleAssignmentDraft): Promise<RoleAssignment> {
-    const r = await request<WireRoleAssignment>('/roles', { method: 'POST', body: { user: draft.user, role: draft.role, term_start: draft.termStart, term_end: draft.termEnd } });
-    return fromWireRoleAssignment(r);
   },
 
   // GET /audit, as documented in docs/API_CONTRACT.md (president only).

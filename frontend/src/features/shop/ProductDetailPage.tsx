@@ -32,7 +32,8 @@ export function ProductDetailPage() {
   if (status === 'error') return <ErrorBox error={error!} onRetry={reload} />;
   if (!product) return null;
 
-  const onSale = product.price < product.basePrice;
+  const onSale = product.salePct > 0;
+  const salePrice = product.basePrice - Math.floor((product.basePrice * product.salePct) / 100);
 
   const selectSize = (size: ProductSize) => {
     if (size.stock === 0) return;
@@ -51,6 +52,8 @@ export function ProductDetailPage() {
         productImage: product.imageUrl,
         sizeLabel: selectedSize.size,
         unitPriceEstimate: product.price,
+        unitBasePriceEstimate: product.basePrice,
+        unitSalePriceEstimate: salePrice,
       },
       quantity,
     );
@@ -75,12 +78,13 @@ export function ProductDetailPage() {
             <span className={styles.price}>
               <Money paise={product.price} />
             </span>
-            {onSale && (
+            {product.price < product.basePrice && (
               <span className={styles.strike}>
                 <Money paise={product.basePrice} />
               </span>
             )}
-            {onSale && <StatusBadge variant="info">Member price</StatusBadge>}
+            {onSale && <StatusBadge variant="danger">-{product.salePct}% Sale</StatusBadge>}
+            {product.price < salePrice && <StatusBadge variant="info">Member price</StatusBadge>}
           </div>
 
           {!product.active && (

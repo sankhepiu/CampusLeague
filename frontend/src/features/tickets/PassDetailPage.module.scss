@@ -1,0 +1,68 @@
+@use '../../styles/mixins';
+
+.backLink {
+  @include mixins.focus-ring;
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: var(--cl-color-secondary);
+  font-size: 0.85rem;
+}
+
+.summaryPanel {
+  margin-bottom: 1.5rem;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.meta {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.25rem;
+}
+
+.qrRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.qrNote {
+  color: var(--cl-color-text-muted);
+  font-size: 0.85rem;
+  max-width: 20rem;
+}
+
+.sectionTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.7rem;
+  margin: 1.5rem 0 0.75rem;
+  color: var(--cl-color-text-muted);
+}
+
+.ticketList,
+.historyList {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ticketRow,
+.historyRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ticketCode {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+}

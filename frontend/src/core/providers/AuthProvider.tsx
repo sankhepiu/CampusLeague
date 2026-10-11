@@ -18,6 +18,10 @@ interface AuthContextValue {
   resendCode: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   hasRole: (...roles: Role[]) => boolean;
+  /** Re-fetches the current user — used after accepting a role invite, so
+   * the new nav/access shows up immediately instead of waiting for the
+   * next login. */
+  refreshUser: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -93,9 +97,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasRole = useCallback((...roles: Role[]) => !!user && roles.some((r) => user.roles.includes(r)), [user]);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      setUser(await authApi.me());
+    } catch {
+      /* session may have just ended elsewhere; the 401 handler covers that */
+    }
+  }, []);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, error, login, signup, verifyEmail, resendCode, logout, hasRole }),
-    [status, user, error, login, signup, verifyEmail, resendCode, logout, hasRole],
+    () => ({ status, user, error, login, signup, verifyEmail, resendCode, logout, hasRole, refreshUser }),
+    [status, user, error, login, signup, verifyEmail, resendCode, logout, hasRole, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

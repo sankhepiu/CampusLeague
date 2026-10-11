@@ -2,6 +2,8 @@ import { ApiRequestError } from '../../api/client';
 import { getCurrentMockUser } from '../auth/mockUsers';
 import type { EventDraft, EventItem, EventStatus, Tier, TierDraft } from './types';
 
+const DEFAULT_ORGANISER = 'Skyline Student Association';
+
 /** Internal mock record — capacity/price bookkeeping the public EventItem
  * doesn't carry (seatsLeft/price are derived per-caller at read time). */
 interface MockTier {
@@ -26,6 +28,7 @@ interface MockEvent {
   status: EventStatus;
   budgetAmount: number;
   tiers: MockTier[];
+  organiserName: string;
 }
 
 const STORE_KEY = 'campusleague.mock.events';
@@ -44,6 +47,7 @@ function seed(): MockEvent[] {
       status: 'closed',
       budgetAmount: 1_200_000,
       tiers: [{ id: 1, name: 'General', publicPrice: 15000, memberPrice: 10000, capacity: 60, soldCount: 35, saleOpens: null, saleCloses: null }],
+      organiserName: DEFAULT_ORGANISER,
     },
     {
       id: 2,
@@ -60,6 +64,7 @@ function seed(): MockEvent[] {
         { id: 3, name: 'General', publicPrice: 100000, memberPrice: 75000, capacity: 100, soldCount: 12, saleOpens: null, saleCloses: null },
         { id: 4, name: 'VIP', publicPrice: 150000, memberPrice: 120000, capacity: 0, soldCount: 0, saleOpens: null, saleCloses: null },
       ],
+      organiserName: DEFAULT_ORGANISER,
     },
     {
       id: 3,
@@ -72,6 +77,7 @@ function seed(): MockEvent[] {
       status: 'on_sale',
       budgetAmount: 400_000,
       tiers: [{ id: 5, name: 'General', publicPrice: 20000, memberPrice: 15000, capacity: 40, soldCount: 0, saleOpens: inAMonth(30), saleCloses: null }],
+      organiserName: DEFAULT_ORGANISER,
     },
   ];
 }
@@ -101,7 +107,15 @@ export function priceForCurrentUser(tier: MockTier): number {
   return user?.membershipStatus === 'active' ? tier.memberPrice : tier.publicPrice;
 }
 
-function toPublicTier(tier: MockTier): Tier {
+function isTierSaleOpen(event: MockEvent, tier: MockTier): boolean {
+  if (event.status !== 'on_sale') return false;
+  const now = Date.now();
+  if (tier.saleOpens && now < new Date(tier.saleOpens).getTime()) return false;
+  if (tier.saleCloses && now > new Date(tier.saleCloses).getTime()) return false;
+  return true;
+}
+
+function toPublicTier(event: MockEvent, tier: MockTier): Tier {
   return {
     id: tier.id,
     name: tier.name,
@@ -109,9 +123,11 @@ function toPublicTier(tier: MockTier): Tier {
     memberPrice: tier.memberPrice,
     price: priceForCurrentUser(tier),
     capacity: tier.capacity,
+    sold: tier.soldCount,
     seatsLeft: Math.max(0, tier.capacity - tier.soldCount),
     saleOpens: tier.saleOpens,
     saleCloses: tier.saleCloses,
+    saleOpen: isTierSaleOpen(event, tier),
   };
 }
 
@@ -125,7 +141,7 @@ export function toPublicEvent(event: MockEvent): EventItem {
     endsAt: event.endsAt,
     capacityTotal: event.capacityTotal,
     status: event.status,
-    tiers: event.tiers.map(toPublicTier),
+    tiers: event.tiers.map((t) => toPublicTier(event, t)),
   };
 }
 
@@ -163,6 +179,7 @@ export function createMockEvent(draft: EventDraft): MockEvent {
     status: draft.status ?? 'draft',
     budgetAmount: draft.budgetAmount ?? 0,
     tiers: [],
+    organiserName: getCurrentMockUser()?.name ?? DEFAULT_ORGANISER,
   };
   events.push(event);
   saveStore(events);

@@ -38,6 +38,10 @@
   white-space: nowrap;
 }
 
+.capacityPanel {
+  margin-bottom: 1.5rem;
+}
+
 .tierGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));

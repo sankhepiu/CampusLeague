@@ -1,9 +1,10 @@
 import { ApiRequestError, type Paginated } from '../../api/client';
 import { getCurrentMockUser } from '../auth/mockUsers';
+import { applyMockCoupon } from '../coupons/mockCouponsStore';
 import { getMockTier, priceForCurrentUser, reserveMockSeats } from '../events/mockEventsStore';
 import { addMockOrder } from '../orders/mockOrdersStore';
-import { createMockTickets, listMockTicketsForUser, toPublicTicket } from './mockTicketsStore';
-import type { PurchaseTicketsRequest, PurchaseTicketsResult, Ticket, TicketOrder, TicketPayment } from './types';
+import { createMockTickets, getMockPassTickets, listMockPassesForUser, toPublicPass, toPublicPassDetail, toPublicTicket } from './mockTicketsStore';
+import type { Pass, PassDetail, PurchaseTicketsRequest, PurchaseTicketsResult, TicketOrder, TicketPayment } from './types';
 import type { RazorpayOrderInfo } from '../payments/types';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -55,7 +56,7 @@ function isSaleOpen(event: { status: string }, tier: { saleOpens: string | null;
 const mockGatewayRef = () => `mock_${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
 
 export const mockTicketsApi = {
-  async purchase(eventId: number, { tier: tierId, quantity = 1, testOutcome = 'success' }: PurchaseTicketsRequest, idempotencyKey: string): Promise<PurchaseTicketsResult> {
+  async purchase(eventId: number, { tier: tierId, quantity = 1, testOutcome = 'success', coupon }: PurchaseTicketsRequest, idempotencyKey: string): Promise<PurchaseTicketsResult> {
     await delay(700);
     const user = getCurrentMockUser();
     if (!user) throw new ApiRequestError({ code: 'not_authenticated', message: 'No active session.' });
@@ -95,21 +96,28 @@ export const mockTicketsApi = {
     const orderId = Date.now() + Math.floor(Math.random() * 1000);
     const createdAt = new Date().toISOString();
     const unitPrice = priceForCurrentUser(tier);
+    const subtotal = unitPrice * quantity;
 
     if (testOutcome === 'pending') {
       const order: TicketOrder = {
         id: orderId,
         status: 'pending',
-        subtotal: unitPrice * quantity,
+        subtotal,
         discount: 0,
-        total: unitPrice * quantity,
+        coupon: null,
+        couponDiscount: 0,
+        total: subtotal,
         paymentRef: '',
+        needsRefund: false,
         createdAt,
       };
       // Pending attempts hold no seat and are never remembered against the
       // idempotency key, matching the contract.
-      return { order, payment: null, tickets: [], replayed: false };
+      return { order, payment: null, tickets: [], pass: null, replayed: false };
     }
+
+    const { discount: couponDiscount, coupon: appliedCoupon } = applyMockCoupon({ code: coupon, appliesTo: 'tickets', amount: subtotal, user });
+    const total = subtotal - couponDiscount;
 
     reserveMockSeats(eventId, tierId, quantity);
     const tickets = createMockTickets({
@@ -123,20 +131,26 @@ export const mockTicketsApi = {
       ownerName: user.name,
       unitPrice,
       quantity,
+      orderId,
     });
 
     const gatewayRef = mockGatewayRef();
     const order: TicketOrder = {
       id: orderId,
       status: 'paid',
-      subtotal: unitPrice * quantity,
-      discount: 0,
-      total: unitPrice * quantity,
+      subtotal,
+      discount: couponDiscount,
+      coupon: appliedCoupon,
+      couponDiscount,
+      total,
       paymentRef: gatewayRef,
+      needsRefund: false,
       createdAt,
     };
-    const payment: TicketPayment = { id: orderId + 1, amount: unitPrice * quantity, status: 'succeeded', gatewayRef, createdAt };
-    const result: PurchaseTicketsResult = { order, payment, tickets: tickets.map(toPublicTicket), replayed: false };
+    const payment: TicketPayment = { id: orderId + 1, amount: total, status: 'succeeded', gatewayRef, createdAt };
+    const passTickets = getMockPassTickets(tickets[0].passId);
+    const pass = toPublicPass(passTickets);
+    const result: PurchaseTicketsResult = { order, payment, tickets: tickets.map(toPublicTicket), pass, replayed: false };
 
     idempotency[idempotencyKey] = { userEmail: user.email, eventId, tier: tierId, quantity, result };
     saveIdempotency(idempotency);
@@ -146,17 +160,17 @@ export const mockTicketsApi = {
     // alongside membership and merch orders.
     addMockOrder(user.email, {
       ...order,
-      lines: [{ id: orderId, kind: 'ticket', label: `${event.title} · ${tier.name}`, plan: null, tier: tierId, productSize: null, qty: quantity, unitPrice, discount: 0 }],
+      lines: [{ id: orderId, kind: 'ticket', label: `${event.title} · ${tier.name}`, plan: null, tier: tierId, productSize: null, qty: quantity, unitPrice, discount: couponDiscount }],
     });
 
     return result;
   },
 
-  async listMine(page = 1): Promise<Paginated<Ticket>> {
+  async listMine(page = 1): Promise<Paginated<Pass>> {
     await delay(300);
     const user = getCurrentMockUser();
     if (!user) throw new ApiRequestError({ code: 'not_authenticated', message: 'No active session.' });
-    const all = listMockTicketsForUser(user.email).map(toPublicTicket);
+    const all = listMockPassesForUser(user.email);
     const start = (page - 1) * PAGE_SIZE;
     const results = all.slice(start, start + PAGE_SIZE);
     return {
@@ -165,6 +179,18 @@ export const mockTicketsApi = {
       previous: page > 1 ? `?page=${page - 1}` : null,
       results,
     };
+  },
+
+  async getPass(id: number): Promise<PassDetail> {
+    await delay(250);
+    const user = getCurrentMockUser();
+    if (!user) throw new ApiRequestError({ code: 'not_authenticated', message: 'No active session.' });
+    const tickets = getMockPassTickets(id);
+    if (tickets.length === 0) throw new ApiRequestError({ code: 'not_found', message: 'No such pass.' });
+    const isOwner = tickets[0].ownerEmail === user.email;
+    const isDoorStaff = user.roles.some((r) => ['president', 'event_manager', 'volunteer_coordinator'].includes(r));
+    if (!isOwner && !isDoorStaff) throw new ApiRequestError({ code: 'not_found', message: 'No such pass.' });
+    return toPublicPassDetail(tickets);
   },
 
   async createRazorpayOrder(): Promise<RazorpayOrderInfo> {

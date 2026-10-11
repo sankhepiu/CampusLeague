@@ -42,6 +42,19 @@
   cursor: pointer;
 }
 
+.detailLink {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  text-decoration: none;
+  display: inline-block;
+}
+
 .pagination {
   display: flex;
   justify-content: center;

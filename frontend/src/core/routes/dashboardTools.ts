@@ -23,12 +23,15 @@ export const ROLE_TOOLS: Partial<Record<Role, DashboardTool[]>> = {
     { key: 'expenseApproval', path: '/expenses/approvals', label: 'Approvals', icon: 'coin', accentKey: 'expenseApproval' },
     { key: 'checkin', path: '/checkin', label: 'Check-in', icon: 'badge', accentKey: 'checkin' },
     { key: 'insights', path: '/insights', label: 'Insights', icon: 'trophy', accentKey: 'insights' },
+    { key: 'couponAdmin', path: '/shop/coupons', label: 'Coupons', icon: 'coin', accentKey: 'couponAdmin' },
+    { key: 'roleAdmin', path: '/roles', label: 'Roles', icon: 'badge', accentKey: 'roleAdmin' },
   ],
   treasurer: [
     { key: 'expenseApproval', path: '/expenses/approvals', label: 'Approvals', icon: 'coin', accentKey: 'expenseApproval' },
     { key: 'finance', path: '/finance', label: 'Finance', icon: 'coin', accentKey: 'finance' },
     { key: 'ledger', path: '/finance/ledger', label: 'Ledger', icon: 'coin', accentKey: 'finance' },
     { key: 'insights', path: '/insights', label: 'Insights', icon: 'trophy', accentKey: 'insights' },
+    { key: 'couponAdmin', path: '/shop/coupons', label: 'Coupons', icon: 'coin', accentKey: 'couponAdmin' },
   ],
   event_manager: [
     { key: 'eventAdmin', path: '/events', label: 'Event Admin', icon: 'trophy', accentKey: 'eventAdmin' },

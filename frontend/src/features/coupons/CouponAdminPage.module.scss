@@ -1,0 +1,86 @@
+@use '../../styles/mixins';
+
+.formPanel {
+  margin-bottom: 1.5rem;
+}
+
+.sectionTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.75rem;
+  margin: 0 0 1rem;
+  color: var(--cl-color-text-muted);
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.button {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+  cursor: pointer;
+  height: fit-content;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.list {
+  display: grid;
+  gap: 1rem;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.code {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.85rem;
+  margin: 0 0 0.4rem;
+}
+
+.meta {
+  color: var(--cl-color-text-muted);
+  font-size: 0.8rem;
+  margin: 0.2rem 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.smallButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.55rem;
+  padding: 0.4rem 0.7rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.smallButtonDanger {
+  border-color: var(--cl-color-danger);
+  color: var(--cl-color-danger);
+}

@@ -26,6 +26,15 @@
   color: var(--cl-color-text);
 }
 
+.filterRow {
+  max-width: 16rem;
+  margin-bottom: 1rem;
+}
+
+.saleBadge {
+  margin-bottom: 0.5rem;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));

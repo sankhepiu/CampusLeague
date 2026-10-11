@@ -1,5 +1,5 @@
 import type { MembershipStatus } from '../auth/types';
-import type { Ticket, TicketStatus } from './types';
+import type { Pass, PassDetail, Ticket, TicketStatus } from './types';
 
 /** Internal mock record — richer than the public Ticket object, since
  * check-in needs to look tickets up by code/token and remember who scanned
@@ -24,6 +24,52 @@ export interface MockTicketRecord {
   checkedInAt?: string;
   checkedInBy?: string;
   membershipStatusAtCheckin?: MembershipStatus;
+  /** Every ticket in one purchase shares a passId — the group pass that
+   * admits all of them with one QR. Seeded tickets (bought before passes
+   * existed, same as the real backend's migration note) get one pass each. */
+  passId: number;
+  orderId: number;
+}
+
+/** One line per scan that admitted at least one person on a pass — mirrors
+ * the real contract's `history: [{ at, by, count }]` on a pass's detail. */
+export interface MockPassScanLogEntry {
+  passId: number;
+  at: string;
+  by: string;
+  count: number;
+}
+
+const SCAN_LOG_KEY = 'campusleague.mock.passScanLog';
+
+function loadScanLog(): MockPassScanLogEntry[] {
+  try {
+    const raw = localStorage.getItem(SCAN_LOG_KEY);
+    if (raw) return JSON.parse(raw) as MockPassScanLogEntry[];
+  } catch {
+    /* storage unavailable or corrupt */
+  }
+  return [];
+}
+
+function saveScanLog(entries: MockPassScanLogEntry[]): void {
+  try {
+    localStorage.setItem(SCAN_LOG_KEY, JSON.stringify(entries));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function recordPassScan(passId: number, by: string, count: number): void {
+  const log = loadScanLog();
+  log.push({ passId, at: new Date().toISOString(), by, count });
+  saveScanLog(log);
+}
+
+export function passScanHistory(passId: number): MockPassScanLogEntry[] {
+  return loadScanLog()
+    .filter((e) => e.passId === passId)
+    .sort((a, b) => a.at.localeCompare(b.at));
 }
 
 const STORE_KEY = 'campusleague.mock.tickets';
@@ -42,8 +88,18 @@ function randomCode(): string {
 function seedTickets(): MockTicketRecord[] {
   const tickets: MockTicketRecord[] = [];
   let id = 1;
-  const push = (params: Omit<MockTicketRecord, 'id' | 'code' | 'qrToken' | 'createdAt'>) => {
-    tickets.push({ ...params, id, code: randomCode(), qrToken: `mock-ticket:${id}:seed`, createdAt: params.checkedInAt ?? new Date().toISOString() });
+  // Seeded tickets predate passes, so each gets its own one-ticket pass —
+  // the same rule the real backend's migration applied.
+  const push = (params: Omit<MockTicketRecord, 'id' | 'code' | 'qrToken' | 'createdAt' | 'passId' | 'orderId'>) => {
+    tickets.push({
+      ...params,
+      id,
+      code: randomCode(),
+      qrToken: `mock-ticket:${id}:seed`,
+      createdAt: params.checkedInAt ?? new Date().toISOString(),
+      passId: id,
+      orderId: id,
+    });
     id++;
   };
 
@@ -116,11 +172,16 @@ export function createMockTickets(
     ownerName: string;
     unitPrice: number;
     quantity: number;
+    orderId: number;
   },
 ): MockTicketRecord[] {
   const store = loadStore();
   const baseId = store.reduce((max, t) => Math.max(max, t.id), 0);
   const createdAt = new Date().toISOString();
+  // Every ticket from this one purchase shares a pass — the pass's own id
+  // is the first ticket's id, same convention a real auto-increment DB would
+  // give a 1:1 "pass row created alongside the first ticket" design.
+  const passId = baseId + 1;
   const created: MockTicketRecord[] = Array.from({ length: params.quantity }, (_, i) => {
     const id = baseId + i + 1;
     return {
@@ -138,6 +199,8 @@ export function createMockTickets(
       ownerEmail: params.ownerEmail,
       ownerName: params.ownerName,
       createdAt,
+      passId,
+      orderId: params.orderId,
     };
   });
   saveStore([...store, ...created]);
@@ -176,6 +239,92 @@ export function saveMockTicket(updated: MockTicketRecord): void {
   const index = store.findIndex((t) => t.id === updated.id);
   if (index >= 0) store[index] = updated;
   saveStore(store);
+}
+
+function saveMockTickets(updated: MockTicketRecord[]): void {
+  const store = loadStore();
+  for (const u of updated) {
+    const index = store.findIndex((t) => t.id === u.id);
+    if (index >= 0) store[index] = u;
+  }
+  saveStore(store);
+}
+
+export function passQrToken(passId: number): string {
+  return `mock-pass:${passId}`;
+}
+
+export function getMockPassTickets(passId: number): MockTicketRecord[] {
+  return loadStore()
+    .filter((t) => t.passId === passId)
+    .sort((a, b) => a.id - b.id);
+}
+
+export function toPublicPass(tickets: MockTicketRecord[]): Pass {
+  const first = tickets[0];
+  const notCancelled = tickets.filter((t) => t.status !== 'cancelled');
+  return {
+    passId: first.passId,
+    event: { id: first.eventId, title: first.eventTitle, startsAt: first.eventStartsAt, venue: first.eventVenue },
+    tier: { id: first.tierId, name: first.tierName },
+    quantity: notCancelled.length,
+    admitted: notCancelled.filter((t) => t.status === 'checked_in').length,
+    remaining: notCancelled.filter((t) => t.status === 'valid').length,
+    qrToken: passQrToken(first.passId),
+    tickets: tickets.map((t) => ({ id: t.id, code: t.code, status: t.status })),
+    createdAt: first.createdAt,
+  };
+}
+
+export function toPublicPassDetail(tickets: MockTicketRecord[]): PassDetail {
+  const first = tickets[0];
+  return {
+    ...toPublicPass(tickets),
+    order: first.orderId,
+    holder: { name: first.ownerName },
+    history: passScanHistory(first.passId).map((e) => ({ at: e.at, by: e.by, count: e.count })),
+  };
+}
+
+/** Every distinct pass this user owns, newest first — groups the flat
+ * ticket store by passId the same way `GET /tickets/me` groups tickets into
+ * passes server-side. */
+export function listMockPassesForUser(email: string): Pass[] {
+  const byPass = new Map<number, MockTicketRecord[]>();
+  for (const t of listMockTicketsForUser(email)) {
+    const group = byPass.get(t.passId) ?? [];
+    group.push(t);
+    byPass.set(t.passId, group);
+  }
+  return Array.from(byPass.values())
+    .map(toPublicPass)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** This user's own passes for one event — backs the event overview's
+ * `my_passes` field. */
+export function listMockPassesForUserAndEvent(email: string, eventId: number): Pass[] {
+  return listMockPassesForUser(email).filter((p) => p.event.id === eventId);
+}
+
+export function findMockPassTicketsByToken(token: string): MockTicketRecord[] | undefined {
+  const match = /^mock-pass:(\d+)$/.exec(token);
+  if (!match) return undefined;
+  const tickets = getMockPassTickets(Number(match[1]));
+  return tickets.length > 0 ? tickets : undefined;
+}
+
+/** Admits up to `count` of this pass's still-valid tickets, recording one
+ * scan-log line for the group (so history shows one entry per scan, not one
+ * per ticket). Returns the tickets actually admitted by this call. */
+export function admitMockPass(passId: number, count: number, by: string, membershipStatusAtCheckin: MembershipStatus): MockTicketRecord[] {
+  const tickets = getMockPassTickets(passId);
+  const checkedInAt = new Date().toISOString();
+  const toAdmit = tickets.filter((t) => t.status === 'valid').slice(0, count);
+  const updated = toAdmit.map((t) => ({ ...t, status: 'checked_in' as const, checkedInAt, checkedInBy: by, membershipStatusAtCheckin }));
+  saveMockTickets(updated);
+  if (updated.length > 0) recordPassScan(passId, by, updated.length);
+  return updated;
 }
 
 /** Sum of what was actually paid for this event's non-cancelled tickets —

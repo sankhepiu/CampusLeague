@@ -1,6 +1,6 @@
 import { ApiRequestError } from '../../api/client';
 import { getActiveMembershipPlanForCurrentUser } from '../membership/api.mock';
-import type { Product, ProductDraft, ProductSize, RestockRequest, SizeLabel } from './types';
+import type { Product, ProductCategory, ProductDraft, ProductSize, RestockRequest, SizeLabel } from './types';
 
 interface MockProductSize extends ProductSize {}
 
@@ -8,7 +8,9 @@ interface MockProduct {
   id: number;
   name: string;
   description: string;
+  category: ProductCategory;
   basePrice: number;
+  salePct: number;
   imageUrl: string | null;
   active: boolean;
   sizes: MockProductSize[];
@@ -40,7 +42,9 @@ function seed(): MockProduct[] {
       id: 1,
       name: 'Skyline Hoodie',
       description: 'Heavyweight fleece with the club crest.',
+      category: 'apparel',
       basePrice: 120000,
+      salePct: 0,
       imageUrl: MOCK_PRODUCT_IMAGES['Skyline Hoodie'],
       active: true,
       sizes: [
@@ -54,7 +58,9 @@ function seed(): MockProduct[] {
       id: 2,
       name: 'Campus Tee',
       description: 'Lightweight cotton tee, screen-printed logo.',
+      category: 'apparel',
       basePrice: 40000,
+      salePct: 20,
       imageUrl: MOCK_PRODUCT_IMAGES['Campus Tee'],
       active: true,
       sizes: [
@@ -68,7 +74,9 @@ function seed(): MockProduct[] {
       id: 3,
       name: 'Archived Cap',
       description: 'Last year’s design — no longer for sale.',
+      category: 'accessories',
       basePrice: 25000,
+      salePct: 0,
       imageUrl: null,
       active: false,
       sizes: [
@@ -77,6 +85,17 @@ function seed(): MockProduct[] {
         { id: 11, size: 'L', stock: 0 },
         { id: 12, size: 'XL', stock: 0 },
       ],
+    },
+    {
+      id: 4,
+      name: 'Skyline Mug',
+      description: 'Ceramic mug with the club crest.',
+      category: 'drinkware',
+      basePrice: 30000,
+      salePct: 0,
+      imageUrl: null,
+      active: true,
+      sizes: [{ id: 13, size: 'ONE', stock: 25 }],
     },
   ];
 }
@@ -101,10 +120,13 @@ function saveStore(products: MockProduct[]): void {
   }
 }
 
-export function priceForCurrentUser(basePrice: number): number {
+/** base_price, less the sale, less the plan's merch discount if active —
+ * in that order, each step rounded down, matching the contract. */
+export function priceForCurrentUser(basePrice: number, salePct = 0): number {
+  const afterSale = basePrice - Math.floor((basePrice * salePct) / 100);
   const plan = getActiveMembershipPlanForCurrentUser();
-  if (!plan || plan.merchDiscountPct <= 0) return basePrice;
-  return basePrice - Math.floor((basePrice * plan.merchDiscountPct) / 100);
+  if (!plan || plan.merchDiscountPct <= 0) return afterSale;
+  return afterSale - Math.floor((afterSale * plan.merchDiscountPct) / 100);
 }
 
 export function toPublicProduct(p: MockProduct): Product {
@@ -112,8 +134,10 @@ export function toPublicProduct(p: MockProduct): Product {
     id: p.id,
     name: p.name,
     description: p.description,
+    category: p.category ?? 'apparel',
     basePrice: p.basePrice,
-    price: priceForCurrentUser(p.basePrice),
+    salePct: p.salePct ?? 0,
+    price: priceForCurrentUser(p.basePrice, p.salePct),
     // `??` also covers a store saved before imageUrl existed.
     imageUrl: p.imageUrl ?? MOCK_PRODUCT_IMAGES[p.name] ?? null,
     active: p.active,
@@ -156,7 +180,9 @@ export function createMockProduct(draft: ProductDraft): MockProduct {
     id: nextId(products.map((p) => p.id)),
     name: draft.name,
     description: draft.description ?? '',
+    category: draft.category ?? 'apparel',
     basePrice: draft.basePrice,
+    salePct: draft.salePct ?? 0,
     // No upload endpoint in the contract: new products have no picture.
     imageUrl: null,
     active: draft.active ?? true,
@@ -188,6 +214,8 @@ export function updateMockProduct(id: number, patch: Partial<ProductDraft>): Moc
     name: patch.name ?? product.name,
     basePrice: patch.basePrice ?? product.basePrice,
     description: patch.description ?? product.description,
+    category: patch.category ?? product.category,
+    salePct: patch.salePct ?? product.salePct,
     active: patch.active ?? product.active,
   });
   saveStore(products);
