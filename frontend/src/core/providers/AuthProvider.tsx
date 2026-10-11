@@ -10,7 +10,7 @@ interface AuthContextValue {
   status: AuthStatus;
   user: AuthUser | null;
   error: ApiError | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, club?: string) => Promise<void>;
   /** Creates the account. Does NOT sign in: the email must be verified. */
   signup: (data: SignupRequest) => Promise<SignupResult>;
   /** Confirms the emailed code and signs the user in. */
@@ -61,11 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, [becomeUnauthenticated]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, club?: string) => {
     setStatus('loading');
     setError(null);
     try {
-      const authUser = await authApi.login({ email, password });
+      const authUser = await authApi.login({ email, password, ...(club ? { club } : {}) });
       setUser(authUser);
       setStatus('authenticated');
     } catch (err) {
