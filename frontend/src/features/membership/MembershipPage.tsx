@@ -15,6 +15,8 @@ import { useAsync } from '../../core/hooks/useAsync';
 import { usePaymentsConfig } from '../../core/hooks/usePaymentsConfig';
 import { accentVarForFeature } from '../../core/config/accents';
 import { membershipApi } from './api';
+import { CouponField } from '../coupons/CouponField';
+import { useCoupon } from '../coupons/useCoupon';
 import { razorpayErrorMessage } from '../payments/errors';
 import type { RazorpayVerifyFields } from '../payments/types';
 import { formatDate, daysUntil } from './dates';
@@ -37,6 +39,9 @@ export function MembershipPage() {
   const [result, setResult] = useState<PurchaseResult | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
 
+  // Checked against the price of whichever plan is in the checkout.
+  const coupon = useCoupon('membership', selectedPlan?.price ?? 0);
+
   const openCheckout = (plan: Plan) => {
     setSelectedPlan(plan);
     setIdempotencyKey(crypto.randomUUID());
@@ -56,7 +61,7 @@ export function MembershipPage() {
     setPhase('submitting');
     setError(null);
     try {
-      const purchaseResult = await membershipApi.purchase({ plan: selectedPlan.id, testOutcome }, idempotencyKey);
+      const purchaseResult = await membershipApi.purchase({ plan: selectedPlan.id, testOutcome, coupon: coupon.applied }, idempotencyKey);
       setResult(purchaseResult);
       if (purchaseResult.order.status === 'pending') {
         setPhase('pending');
@@ -225,14 +230,24 @@ export function MembershipPage() {
                 <Money paise={selectedPlan.price} />
               </div>
 
+              <CouponField coupon={coupon} amount={selectedPlan.price} placeholder="e.g. WELCOME10" disabled={phase === 'submitting'} />
+
               {gateway === 'razorpay' ? (
                 <>
                   {phase === 'error' && error && <ErrorBox error={razorpayErrorMessage(error)} />}
                   <div className={styles.checkoutActions}>
                     <RazorpayPayButton
-                      amountPaise={selectedPlan.price}
+                      amountPaise={selectedPlan.price - coupon.discount}
                       disabled={phase === 'submitting'}
-                      createOrder={() => membershipApi.createRazorpayOrder(selectedPlan.id, idempotencyKey!)}
+                      // A new key each time the checkout is opened: the last
+                      // one belongs to an order that was closed (cancelled)
+                      // or priced with a different coupon or quantity, and
+                      // the server refuses to reuse it.
+                      createOrder={() => {
+                        const key = crypto.randomUUID();
+                        setIdempotencyKey(key);
+                        return membershipApi.createRazorpayOrder(selectedPlan.id, key, coupon.applied);
+                      }}
                       onVerified={onRazorpayVerified}
                       onCancelled={onRazorpayCancelled}
                       onError={onRazorpayError}

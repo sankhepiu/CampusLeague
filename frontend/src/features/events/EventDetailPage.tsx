@@ -20,6 +20,8 @@ import { accentVarForFeature } from '../../core/config/accents';
 import { formatDateTime } from '../../core/utils/formatDateTime';
 import { eventsApi } from './api';
 import { ticketsApi } from '../tickets/api';
+import { CouponField } from '../coupons/CouponField';
+import { useCoupon } from '../coupons/useCoupon';
 import { razorpayErrorMessage } from '../payments/errors';
 import type { RazorpayVerifyFields } from '../payments/types';
 import type { PaymentTestOutcome, PurchaseTicketsResult } from '../tickets/types';
@@ -62,6 +64,9 @@ export function EventDetailPage() {
   const attendance = useAsync(() => eventsApi.attendance(eventId), [eventId], { enabled: canSeeFinance && showStaffData });
   const pnl = useAsync(() => eventsApi.pnl(eventId), [eventId], { enabled: canSeeFinance && showStaffData });
 
+  // Re-checked when the quantity changes: a coupon may need a minimum order.
+  const coupon = useCoupon('tickets', (selectedTier?.price ?? 0) * quantity);
+
   const openCheckout = (tier: Tier) => {
     if (!user) {
       navigate('/login', { state: { from: `/events/${eventId}` } });
@@ -86,7 +91,7 @@ export function EventDetailPage() {
     setPhase('submitting');
     setPurchaseError(null);
     try {
-      const result = await ticketsApi.purchase(eventId, { tier: selectedTier.id, quantity, testOutcome }, idempotencyKey);
+      const result = await ticketsApi.purchase(eventId, { tier: selectedTier.id, quantity, testOutcome, coupon: coupon.applied }, idempotencyKey);
       setPurchaseResult(result);
       if (result.order.status === 'pending') {
         setPhase('pending');
@@ -256,14 +261,24 @@ export function EventDetailPage() {
                 </button>
               </div>
 
+              <CouponField coupon={coupon} amount={selectedTier.price * quantity} placeholder="e.g. GALA50" disabled={phase === 'submitting'} />
+
               {gateway === 'razorpay' ? (
                 <>
                   {phase === 'error' && purchaseError && <ErrorBox error={razorpayErrorMessage(purchaseError)} />}
                   <div className={styles.checkoutActions}>
                     <RazorpayPayButton
-                      amountPaise={selectedTier.price * quantity}
+                      amountPaise={selectedTier.price * quantity - coupon.discount}
                       disabled={phase === 'submitting'}
-                      createOrder={() => ticketsApi.createRazorpayOrder(eventId, selectedTier.id, quantity, idempotencyKey!)}
+                      // A new key each time the checkout is opened: the last
+                      // one belongs to an order that was closed (cancelled)
+                      // or priced with a different coupon or quantity, and
+                      // the server refuses to reuse it.
+                      createOrder={() => {
+                        const key = crypto.randomUUID();
+                        setIdempotencyKey(key);
+                        return ticketsApi.createRazorpayOrder(eventId, selectedTier.id, quantity, key, coupon.applied);
+                      }}
                       onVerified={onRazorpayVerified}
                       onCancelled={onRazorpayCancelled}
                       onError={onRazorpayError}

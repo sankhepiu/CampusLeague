@@ -54,6 +54,8 @@ export type PaymentTestOutcome = 'success' | 'failure' | 'pending';
 export interface PurchaseRequest {
   plan: number;
   testOutcome?: PaymentTestOutcome;
+  /** A coupon code the server has already said is valid. */
+  coupon?: string;
 }
 
 export interface PurchaseResult {
