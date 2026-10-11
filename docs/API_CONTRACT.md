@@ -20,6 +20,73 @@ are proposals until both of us agree.
   ```
 - Fields not listed for a request are ignored.
 
+## Clubs
+
+**Assumption:** the plan describes one club. Several clubs now share this
+site. Each has its own database schema, with its own users, tokens, events,
+shop, ledger and audit log; nothing is shared between them.
+
+Every request may carry the club's slug:
+
+```
+X-Club: robotics
+```
+
+- **No header means `skyline`.** A client that never sends it behaves exactly
+  as before.
+- An unknown slug, or a club that has not been set up on this server, is
+  `404` with `{ "code": "club_not_found", "message": "...", "field": null }`,
+  on every endpoint.
+- **A token belongs to one club.** Sent with another club's `X-Club` (or with
+  none, when it is not a Skyline token) it is unknown: `401
+  authentication_failed`. After login, send the `club.slug` from the login
+  response as `X-Club` on every request.
+- Ids are per club: event 3 in one club and event 3 in another are different
+  events. Never reuse an id across clubs.
+- The same email may have an account in several clubs. They are separate
+  accounts (separate passwords, memberships and roles).
+
+Club object:
+
+```json
+{ "slug": "robotics", "name": "Pixel Robotics Club", "short": "PRC", "color": "#4fd1c5" }
+```
+
+| Field | Notes |
+|---|---|
+| `slug` | The value for `X-Club`. |
+| `name`, `short` | Full name and short label. |
+| `color` | The club's accent colour, `#rrggbb`. |
+
+### GET /clubs
+
+- **Who:** Public. No token, and `X-Club` makes no difference.
+
+Response `200`: an array (not paginated) of every club:
+
+```json
+[
+  { "slug": "skyline", "name": "Skyline Student Association", "short": "SSA", "color": "#f5c542" },
+  { "slug": "robotics", "name": "Pixel Robotics Club", "short": "PRC", "color": "#4fd1c5" },
+  { "slug": "music", "name": "Raaga Music Society", "short": "RMS", "color": "#f472b6" }
+]
+```
+
+### What changed for the frontend
+
+Nothing breaks for a client that ignores clubs: without `X-Club` everything is
+Skyline, as before. To support several clubs:
+
+1. Login may now answer `409 choose_club` (see `POST /auth/login`). Show the
+   listed clubs and log in again with `"club": "<slug>"`.
+2. Keep `club` from the login response next to the token, and send
+   `X-Club: <club.slug>` with every request.
+3. `POST /auth/login`, `POST /auth/verify-email` and `GET /auth/me` responses
+   have a new `club` key.
+4. Signup, verify-email and resend-code act on the club in `X-Club`
+   (default Skyline), so a signup page for another club must send the header.
+5. Switching club means logging in to the other club: a different token.
+
 ## Authentication
 
 Token authentication. Login and email verification return a `token`; send it
@@ -85,6 +152,7 @@ Codes used by every endpoint:
 | 403 | `permission_denied` | Logged in, but not allowed. |
 | 403 | `email_not_verified` | Login only: the password is right but the email address has not been verified. |
 | 404 | `not_found` | The record, or the endpoint itself, does not exist. |
+| 404 | `club_not_found` | The `X-Club` header (or login's `club`) names no club on this server. |
 | 405 | `method_not_allowed` | Wrong HTTP method. |
 | 415 | `unsupported_media_type` | The body is not JSON. |
 | 429 | `throttled` | Too many requests. The `Retry-After` header gives the wait in seconds. |
@@ -277,14 +345,43 @@ Errors: `400 validation_error` if `email` is missing; `429 throttled`.
   (`429 throttled` beyond that).
 - **Database:** creates the user's token if they have none.
 
+- **Clubs:** `X-Club` is not used here. With `"club"` in the body the login is
+  for that club. Without it the email and password are tried in every club.
+
 Request:
 
 ```json
 { "email": "priya@example.com", "password": "correct-horse-battery" }
 ```
 
-Response `200`: `token` and `user` (the same body as
-`POST /auth/verify-email`).
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `email`, `password` | string | yes | |
+| `club` | string | no | A club slug, any letter case. Needed only after a `choose_club` answer. |
+
+Response `200`: `token`, `user` and **`club`** (new: the [club object](#clubs)
+this token belongs to). `POST /auth/verify-email` returns the same three keys.
+
+```json
+{ "token": "9944b0...", "user": { "id": 7, "email": "priya@example.com", "...": "..." },
+  "club": { "slug": "skyline", "name": "Skyline Student Association", "short": "SSA", "color": "#f5c542" } }
+```
+
+Response `409` when the email and password are right in more than one club.
+No token is issued; ask the user which club and send the request again with
+`"club"`:
+
+```json
+{
+  "code": "choose_club",
+  "message": "This account belongs to more than one club. Choose which one to open.",
+  "field": null,
+  "clubs": [
+    { "slug": "skyline", "name": "Skyline Student Association", "short": "SSA", "color": "#f5c542" },
+    { "slug": "robotics", "name": "Pixel Robotics Club", "short": "PRC", "color": "#4fd1c5" }
+  ]
+}
+```
 
 Errors:
 
@@ -293,6 +390,11 @@ Errors:
 | 400 | `validation_error` | `email` or `password` missing or malformed. |
 | 401 | `invalid_credentials` | Wrong email, wrong password, or inactive account. The response is identical in all three cases. |
 | 403 | `email_not_verified` | The password is correct but the email has not been verified. Returned **only after the password matches**, so it reveals nothing to someone guessing. Send the user to the code screen. |
+| 404 | `club_not_found` | `"club"` is not a club on this server. |
+| 409 | `choose_club` | Valid in several clubs; see above. |
+
+With `"club"` given, a password that is right in a different club is still
+`401 invalid_credentials`.
 
 ## POST /auth/logout
 
@@ -311,7 +413,9 @@ Current user, current roles and membership status. Requirements: R1, R19.
 - **Who:** Any logged-in user.
 - **Database:** read only.
 
-Response `200`: a [user object](#user-object).
+Response `200`: a [user object](#user-object) plus **`club`** (new: the
+[club object](#clubs) of the request's `X-Club`). `roles` and
+`membership_status` are the user's in that club.
 
 ```json
 {
@@ -321,11 +425,13 @@ Response `200`: a [user object](#user-object).
   "college_id": "SSA-010",
   "phone": "",
   "roles": ["treasurer"],
-  "membership_status": "none"
+  "membership_status": "none",
+  "club": { "slug": "skyline", "name": "Skyline Student Association", "short": "SSA", "color": "#f5c542" }
 }
 ```
 
-Errors: `401 not_authenticated`, `401 authentication_failed`.
+Errors: `401 not_authenticated`, `401 authentication_failed` (including a
+token from another club), `404 club_not_found`.
 
 ---
 
@@ -1390,7 +1496,8 @@ checkout and it is still open; nothing new is created):
 }
 ```
 
-`key` is Razorpay's public key id (the same value as `key_id` in
+`name` is the name of the club in `X-Club` (before clubs it was always
+Skyline's). `key` is Razorpay's public key id (the same value as `key_id` in
 `GET /payments/config`), named as Razorpay Checkout expects it. `amount` is
 in paise and is what Razorpay will charge. `description` is the
 order's line labels (with ` x<qty>` for tickets and merch), comma separated.

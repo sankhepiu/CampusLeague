@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.db import transaction
 from rest_framework import status
@@ -11,6 +12,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from audit import services as audit
+from common.clubs import club_info, current_club, is_set_up, use_club
 
 from . import roles, verification
 from .models import RoleAssignment, RoleInvite
@@ -60,7 +62,15 @@ class TooManyAttempts(APIException):
 
 
 def session_payload(user, token):
-    return {'token': token.key, 'user': UserSerializer(user).data}
+    # `club` is the club this token belongs to: send its slug as X-Club with
+    # every later request.
+    return {'token': token.key, 'user': UserSerializer(user).data, 'club': club_info(current_club())}
+
+
+class ClubNotFound(APIException):
+    status_code = status.HTTP_404_NOT_FOUND
+    default_detail = 'There is no club with this slug.'
+    default_code = 'club_not_found'
 
 
 class SignupView(APIView):
@@ -95,16 +105,51 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = authenticate(request, **serializer.validated_data)
-        if user is None:
-            raise InvalidCredentials()
-        # Checked only now, after the password matched. Someone who does not
-        # know the password gets invalid_credentials whether or not the
-        # account exists or is verified, so this reveals nothing to them.
-        if not user.email_verified:
-            raise EmailNotVerified()
-        token, _ = Token.objects.get_or_create(user=user)
-        return Response(session_payload(user, token))
+        credentials = dict(serializer.validated_data)
+        wanted = credentials.pop('club').strip().lower()
+
+        # ASSUMPTION (clubs are beyond the plan): accounts are per club, so
+        # the same email may exist in several. Without "club" the
+        # credentials are tried in every club; the X-Club header plays no
+        # part in login.
+        if wanted:
+            if wanted not in settings.CLUBS or not is_set_up(wanted):
+                raise ClubNotFound()
+            candidates = [wanted]
+        else:
+            candidates = [slug for slug in settings.CLUBS if is_set_up(slug)]
+
+        matches, unverified = [], False
+        for slug in candidates:
+            with use_club(slug):
+                user = authenticate(request, **credentials)
+                if user is None:
+                    continue
+                # Checked only after the password matched. Someone who does
+                # not know the password gets invalid_credentials whether or
+                # not the account exists or is verified, so this reveals
+                # nothing to them.
+                if not user.email_verified:
+                    unverified = True
+                    continue
+                matches.append(slug)
+
+        if not matches:
+            raise EmailNotVerified() if unverified else InvalidCredentials()
+        if len(matches) > 1:
+            # The password is right in more than one club. No token yet:
+            # the client asks which club and logs in again with "club".
+            return Response({
+                'code': 'choose_club',
+                'message': 'This account belongs to more than one club. Choose which one to open.',
+                'field': None,
+                'clubs': [club_info(slug) for slug in matches],
+            }, status=status.HTTP_409_CONFLICT)
+
+        with use_club(matches[0]):
+            user = authenticate(request, **credentials)
+            token, _ = Token.objects.get_or_create(user=user)
+            return Response(session_payload(user, token))
 
 
 class VerifyEmailView(APIView):
@@ -164,7 +209,7 @@ class MeView(APIView):
     def get(self, request):
         # The user comes from the token, never from anything in the request
         # body or query string.
-        return Response(UserSerializer(request.user).data)
+        return Response({**UserSerializer(request.user).data, 'club': request.club})
 
 
 President = has_role('president')
