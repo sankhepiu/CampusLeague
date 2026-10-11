@@ -47,7 +47,7 @@ from events.models import CheckIn, Event, Ticket, TicketPass, TicketTier
 from finance import expenses
 from insights import savefiles
 from insights.models import SaveFile
-from finance.models import Approval, ExpenseRequest, LedgerEntry, LedgerLine
+from finance.models import Approval, ExpenseRequest, LedgerEntry, LedgerLine, receipt_folder
 from members.models import Membership, MembershipPlan
 from members.services import add_months
 from shop import stock
@@ -122,11 +122,16 @@ def remove_orphan_receipts():
     after reset and seed have committed: a failed seed leaves both the old
     rows and their files in place.
     """
-    folder = os.path.join(settings.MEDIA_ROOT, 'receipts')
+    # Only the current club's folder, and only files: other clubs' folders
+    # sit inside Skyline's and must be left alone.
+    folder = os.path.join(settings.MEDIA_ROOT, receipt_folder())
     if not os.path.isdir(folder):
         return 0
     in_use = {os.path.basename(name) for name in ExpenseRequest.objects.values_list('receipt_file', flat=True)}
-    stale = [name for name in os.listdir(folder) if name not in in_use]
+    stale = [
+        name for name in os.listdir(folder)
+        if name not in in_use and os.path.isfile(os.path.join(folder, name))
+    ]
     for name in stale:
         os.remove(os.path.join(folder, name))
     return len(stale)

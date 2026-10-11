@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import APIException, ErrorDetail, ValidationError
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
@@ -242,7 +243,9 @@ class PassDetailView(APIView):
             **PassSerializer(ticket_pass).data,
             'order': ticket_pass.order_id,
             'holder': {'name': ticket_pass.owner.name},
-            'history': tickets.pass_history(ticket_pass),
+            'history': [
+                {**item, 'at': timezone.localtime(item['at'])} for item in tickets.pass_history(ticket_pass)
+            ],
         })
 
 
@@ -288,7 +291,8 @@ class CheckInView(APIView):
             },
             'holder_name': ticket and ticket.owner.name,
             'membership_status': scan.membership_status,
-            'checked_in_at': checkin and checkin.scanned_at,
+            # In the site's time zone (+05:30), like every other timestamp.
+            'checked_in_at': checkin and timezone.localtime(checkin.scanned_at),
             'checked_in_by': checkin and checkin.scanned_by.name,
         })
 

@@ -74,6 +74,8 @@ class SignupVerifyLoginFlowTests(VerificationTestCase):
                 'id': user.id, 'email': EMAIL, 'name': 'Priya', 'college_id': 'SSA-041', 'phone': '',
                 'roles': [], 'membership_status': 'none',
             },
+            # Added with multi-club support: the club the token belongs to.
+            'club': {'slug': 'skyline', 'name': 'Skyline Student Association', 'short': 'SSA', 'color': '#f5c542'},
         })
 
         # 4. The token works, and so does logging in normally from now on.
@@ -88,7 +90,7 @@ class SignupVerifyLoginFlowTests(VerificationTestCase):
         verified = self.verify(self.emailed_code()).json()
         login = self.login().json()
         self.assertEqual(verified, login)
-        self.assertEqual(set(verified), {'token', 'user'})
+        self.assertEqual(set(verified), {'token', 'user', 'club'})
 
     def test_email_is_matched_ignoring_case_and_spaces(self):
         self.signup()

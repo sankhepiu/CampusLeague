@@ -56,7 +56,6 @@ CURRENCY = 'INR'
 TIMEOUT_SECONDS = 10
 # Razorpay refuses orders under one rupee.
 MIN_AMOUNT = 100
-MERCHANT_NAME = 'Skyline Student Association'
 # The operating system's CA bundle on macOS and most Linux systems.
 SYSTEM_CA_BUNDLE = '/etc/ssl/cert.pem'
 

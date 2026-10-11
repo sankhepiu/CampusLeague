@@ -2,7 +2,7 @@
 from django.conf import settings
 from rest_framework import status
 from rest_framework.exceptions import APIException, ErrorDetail, NotFound, ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -145,9 +145,16 @@ class RazorpayView(APIView):
 
 
 class PaymentConfigView(APIView):
-    """GET /payments/config. Which gateway the frontend should use."""
+    """GET /payments/config. Which gateway the frontend should use.
 
-    permission_classes = [IsAuthenticated]
+    Public: the frontend asks on page load, before anyone has logged in. It
+    returns nothing secret (the key id is what the browser hands to
+    Razorpay's checkout in plain sight). No authentication classes either,
+    so a stale or other-club token in the header cannot turn it into a 401.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def get(self, request):
         gateway = razorpay.active_gateway()
@@ -178,7 +185,8 @@ class RazorpayOrderView(RazorpayView):
             'key': settings.RAZORPAY_KEY_ID,
             'amount': order.total,
             'currency': razorpay.CURRENCY,
-            'name': razorpay.MERCHANT_NAME,
+            # What the checkout shows as the merchant: the club being paid.
+            'name': request.club['name'],
             'description': checkout_description(order),
             'prefill': {'name': request.user.name, 'email': request.user.email},
         }

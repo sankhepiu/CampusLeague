@@ -103,6 +103,8 @@ class ResendCodeSerializer(serializers.Serializer):
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=254)
     password = serializers.CharField(max_length=128, trim_whitespace=False, write_only=True)
+    # Optional: the club to log in to. Without it every club is tried.
+    club = serializers.CharField(max_length=40, required=False, allow_blank=True, default='')
 
     def validate_email(self, value):
         return value.strip().lower()

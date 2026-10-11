@@ -281,6 +281,8 @@ class PassDetailTests(PassTestCase):
                          [('Event_Manager', 2), ('Volunteer_Coordinator', 1)])
         self.assertEqual(set(body['history'][0]), {'at', 'by', 'count'})
         self.assertLessEqual(body['history'][0]['at'], body['history'][1]['at'])
+        # Sent in the site's time zone like every other timestamp, not UTC "Z".
+        self.assertTrue(all(item['at'].endswith('+05:30') for item in body['history']), body['history'])
 
     def test_staff_can_open_any_pass_and_others_get_a_404(self):
         ticket_pass = self.buy(1)

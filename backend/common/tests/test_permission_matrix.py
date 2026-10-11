@@ -47,6 +47,7 @@ MATRIX = [
     ('POST', 'api/auth/login', [400] * 6),
     ('POST', 'api/auth/logout', [401] + [204] * 5),
     ('GET', 'api/auth/me', LOGGED_IN),
+    ('GET', 'api/clubs', PUBLIC),
     # Roles: president only. Invites are visible to their nominee.
     ('GET', 'api/roles', only(P)),
     ('POST', 'api/roles', only(P, ok=400)),
@@ -87,7 +88,7 @@ MATRIX = [
     ('GET', 'api/coupons/<int:pk>', only(P, T)),
     ('PATCH', 'api/coupons/<int:pk>', only(P, T)),
     ('DELETE', 'api/coupons/<int:pk>', only(P, T, ok=404)),
-    ('GET', 'api/payments/config', LOGGED_IN),
+    ('GET', 'api/payments/config', PUBLIC),
     ('POST', 'api/payments/razorpay/order', LOGGED_IN_400),
     ('POST', 'api/payments/razorpay/verify', LOGGED_IN_400),
     ('POST', 'api/payments/razorpay/cancel', LOGGED_IN_400),

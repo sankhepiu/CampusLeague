@@ -306,6 +306,8 @@ class MeTests(ApiTestCase):
             'phone': '+919876543210',
             'roles': [],
             'membership_status': 'none',
+            # Added with multi-club support: which club this session is in.
+            'club': {'slug': 'skyline', 'name': 'Skyline Student Association', 'short': 'SSA', 'color': '#f5c542'},
         })
 
     def test_user_id_in_the_query_string_is_ignored(self):

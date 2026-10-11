@@ -20,7 +20,7 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 
 from accounts.views import RoleEndView, RoleInviteActionView, RoleInviteListView, RoleListCreateView
-from common.views import api_not_found
+from common.views import api_not_found, club_list
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -31,6 +31,7 @@ urlpatterns = [
     path('api/roles/invites/<int:pk>/accept', RoleInviteActionView.as_view(action='accept'), name='role-invite-accept'),
     path('api/roles/invites/<int:pk>/decline', RoleInviteActionView.as_view(action='decline'), name='role-invite-decline'),
     path('api/roles/invites/<int:pk>/revoke', RoleInviteActionView.as_view(action='revoke'), name='role-invite-revoke'),
+    path('api/clubs', club_list, name='club-list'),
     path('api/', include('members.urls')),
     path('api/', include('events.urls')),
     path('api/', include('shop.urls')),
