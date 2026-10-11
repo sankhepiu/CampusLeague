@@ -5,7 +5,7 @@ import { TextInput } from '../../components/FormField/TextInput';
 import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { Spinner } from '../../components/Spinner/Spinner';
 import { PixelIcon } from '../../components/PixelIcon';
-import type { ApiError } from '../../api/client';
+import type { ApiError, ClubOption } from '../../api/client';
 import { env } from '../../core/config/env';
 import { useAuth } from '../../core/hooks/useAuth';
 import { mockAuthApi } from './api.mock';
@@ -92,6 +92,10 @@ export function AuthPage({ initialTab }: AuthPageProps) {
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // Set when login answers 409 choose_club: the account exists in several
+  // clubs, so we show them and log in again with the chosen slug.
+  const [clubChoices, setClubChoices] = useState<ClubOption[] | null>(null);
+
   const [loginForm, setLoginForm] = useState<LoginForm>(EMPTY_LOGIN);
   const [signupForm, setSignupForm] = useState<SignupForm>(EMPTY_SIGNUP);
   const [pendingVerification, setPendingVerificationState] = useState<PendingVerification | null>(loadPendingVerification);
@@ -168,6 +172,10 @@ export function AuthPage({ initialTab }: AuthPageProps) {
       setPhase('idle');
       setRedirectReady(true);
       const apiError = err as ApiError;
+      if (apiError?.code === 'choose_club' && apiError.clubs) {
+        setClubChoices(apiError.clubs);
+        return;
+      }
       if (apiError?.code === 'email_not_verified') {
         // The password was right (the server only says this after it
         // matches) but the email is unconfirmed: send them to the code screen.
@@ -195,6 +203,16 @@ export function AuthPage({ initialTab }: AuthPageProps) {
   const onLoginSubmit = (e: FormEvent) => {
     e.preventDefault();
     void runSubmit(validateLogin, () => login(loginForm.email, loginForm.password));
+  };
+
+  const pickClub = (slug: string) => {
+    void runSubmit(
+      () => ({}),
+      async () => {
+        await login(loginForm.email, loginForm.password, slug);
+        setClubChoices(null);
+      },
+    );
   };
 
   const onSignupSubmit = (e: FormEvent) => {
@@ -225,7 +243,29 @@ export function AuthPage({ initialTab }: AuthPageProps) {
           <h1 className={styles.title}>Campus League</h1>
         </div>
 
-        {pendingVerification ? (
+        {clubChoices ? (
+          <div>
+            <h2 className={styles.title}>Choose a club</h2>
+            {generalError && <ErrorBox error={generalError} />}
+            <div style={{ display: 'grid', gap: '0.75rem', margin: '1rem 0' }}>
+              {clubChoices.map((c) => (
+                <button
+                  key={c.slug}
+                  type="button"
+                  className={styles.submit}
+                  style={{ borderColor: c.color, textAlign: 'left' }}
+                  disabled={submitting}
+                  onClick={() => pickClub(c.slug)}
+                >
+                  {c.name} ({c.short})
+                </button>
+              ))}
+            </div>
+            <button type="button" className={styles.tab} onClick={() => setClubChoices(null)} disabled={submitting}>
+              Back
+            </button>
+          </div>
+        ) : pendingVerification ? (
           <VerifyEmailPanel
             // A different address means a fresh panel (fresh code box and cooldown).
             key={pendingVerification.email}

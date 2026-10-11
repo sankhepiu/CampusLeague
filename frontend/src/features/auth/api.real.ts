@@ -1,5 +1,5 @@
 import { request, session } from '../../api/client';
-import type { AuthResponse, AuthUser, LoginRequest, SignupRequest, SignupResult, VerifyEmailRequest } from './types';
+import type { AuthUser, LoginRequest, SignupRequest, SignupResult, VerifyEmailRequest } from './types';
 
 /** Wire shapes exactly as docs/API_CONTRACT.md defines them (snake_case). */
 interface WireUser {
@@ -15,6 +15,7 @@ interface WireUser {
 interface WireAuthResponse {
   token: string;
   user: WireUser;
+  club?: { slug: string };
 }
 
 function fromWireUser(u: WireUser): AuthUser {
@@ -29,15 +30,12 @@ function fromWireUser(u: WireUser): AuthUser {
   };
 }
 
-function fromWireAuth(res: WireAuthResponse): AuthResponse {
-  return { token: res.token, user: fromWireUser(res.user) };
-}
-
 export const realAuthApi = {
   async login(body: LoginRequest): Promise<AuthUser> {
-    const result = fromWireAuth(await request<WireAuthResponse>('/auth/login', { method: 'POST', body }));
-    session.setToken(result.token);
-    return result.user;
+    const wire = await request<WireAuthResponse>('/auth/login', { method: 'POST', body });
+    session.setToken(wire.token);
+    if (wire.club) session.setClub(wire.club.slug);
+    return fromWireUser(wire.user);
   },
 
   /** Creates the account and has the server email a 6-digit code. There is
@@ -54,9 +52,10 @@ export const realAuthApi = {
    * so on success the user is signed in. Errors (as `ApiRequestError.code`):
    * `invalid_code`, `code_expired`, `too_many_attempts`, `throttled`. */
   async verifyEmail({ email, code }: VerifyEmailRequest): Promise<AuthUser> {
-    const result = fromWireAuth(await request<WireAuthResponse>('/auth/verify-email', { method: 'POST', body: { email, code } }));
-    session.setToken(result.token);
-    return result.user;
+    const wire = await request<WireAuthResponse>('/auth/verify-email', { method: 'POST', body: { email, code } });
+    session.setToken(wire.token);
+    if (wire.club) session.setClub(wire.club.slug);
+    return fromWireUser(wire.user);
   },
 
   /** Always resolves: the server answers `{sent: true}` whether or not the

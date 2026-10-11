@@ -17,6 +17,8 @@ export interface AuthUser {
 export interface LoginRequest {
   email: string;
   password: string;
+  /** Club slug; only needed after a `409 choose_club` answer. */
+  club?: string;
 }
 
 export interface SignupRequest {

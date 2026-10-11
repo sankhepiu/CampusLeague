@@ -2,7 +2,7 @@ import { env } from '../../core/config/env';
 import { session } from './session';
 import { ApiRequestError, type ApiError, type RequestOptions } from './types';
 
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 20_000;
 
 /** Callback invoked whenever a request comes back 401, so the auth provider
  * can clear local state without every call site needing to know about it. */
@@ -56,6 +56,7 @@ export async function requestWithStatus<T>(path: string, options: RequestOptions
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const token = session.getToken();
+  const club = session.getClub();
 
   // Receipt uploads (POST /expenses) are the one endpoint that isn't JSON.
   // For FormData we must NOT set Content-Type ourselves — the browser needs
@@ -70,6 +71,7 @@ export async function requestWithStatus<T>(path: string, options: RequestOptions
         ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         // Django REST's TokenAuthentication expects "Token <key>", not "Bearer".
         ...(token ? { Authorization: `Token ${token}` } : {}),
+        ...(club ? { 'X-Club': club } : {}),
         ...options.headers,
       },
       body: isFormData ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,
