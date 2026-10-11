@@ -13,17 +13,17 @@ Built at the **Odoo x NMIT Hackathon 2026** (Student Organization System problem
 
 | Area | What you can do |
 |---|---|
-| **Accounts** | Sign up with email OTP verification (hashed codes, 10-minute expiry, attempt limit, resend throttle). Role-based access: president, treasurer, event manager, volunteer coordinator, member. |
+| **Accounts** | Sign up (choosing your club) with email OTP verification (hashed codes, 10-minute expiry, attempt limit, resend throttle). Role-based access: president, treasurer, event manager, volunteer coordinator, member, each with its own dashboard. |
 | **Membership** | Buy or renew a plan, member-only prices, a member card with a signed QR code, automatic expiry handling. |
 | **Events & tickets** | Ticket tiers with public and member prices, sale windows, capacity that can never be oversold. **One QR per order** (a group pass) that is scanned once per person ("Admitted 4 of 10"). Check-in for event managers and volunteer coordinators, with manual code entry as a fallback. |
-| **Shop** | Merch with sizes and stock, sale prices, member discount and coupons (percent or flat, minimum order, cap, usage limits). |
+| **Shop** | Merch with sizes and stock, sale prices, member discount and coupons (percent or flat, minimum order, cap, usage limits) on merch, tickets and memberships. A limit of 10 per item. |
 | **Payments** | **Razorpay (test mode)** with server-side signature verification, or a built-in mock gateway when offline. Idempotency keys stop double charges. |
 | **Volunteering** | Fundraisers with goals and progress, plus a **Kanban board** (To Do / Doing / Done) with drag and drop for assignees and coordinators. |
 | **Reimbursements** | Members submit expenses with receipts. Treasurers approve on an **approvals Kanban**; nobody can approve their own expense. |
 | **Finance** | Append-only double-entry ledger, live reconciliation (11 checks), and **Coin Trail**: click any figure to see the ledger lines behind it. |
 | **Insights** | Break-even simulator, forecast vs actual, an explainable Club Health score, handover "Save Files". |
-| **Governance** | Role changes are maker–checker: the president invites, the nominee accepts, and the last president can't be removed. Full audit log. |
-| **More clubs** | Several clubs on one site, **one PostgreSQL schema per club**. Same login page; a user in two clubs picks one after logging in. Each club's ledger reconciles on its own. |
+| **Governance** | Role changes are maker–checker: the president invites, the nominee accepts, and the last president can't be removed. Active, upcoming and ended roles are shown separately. Full audit log. |
+| **More clubs** | Three clubs on one site (Skyline, Pixel Robotics, Raaga Music), **one PostgreSQL schema per club**. Same login page; you pick your club when signing up, a user in two clubs picks one after logging in, and the navbar badge shows which club you're in. Each club's ledger reconciles on its own. |
 
 ## How the money stays correct
 
@@ -61,7 +61,7 @@ cp .env.example .env            # fill in SECRET_KEY; Razorpay keys are optional
 docker compose up -d --wait     # PostgreSQL on localhost:5433
 python manage.py migrate
 python manage.py seed_demo --reset
-python manage.py setup_clubs    # extra clubs: robotics and music
+python manage.py setup_clubs --reset   # extra clubs: robotics and music
 python manage.py runserver      # http://127.0.0.1:8000
 
 # 2. Frontend (new terminal)
@@ -94,6 +94,9 @@ Password for every demo account: `skyline-demo-2026`
 | `member37@skyline.test` | Lapsed member |
 | `member01@skyline.test` | Member of two clubs (Skyline and Robotics) |
 | `president@robotics.test`, `president@music.test` | Presidents of the other clubs |
+
+The other clubs follow the same pattern (`treasurer@robotics.test`, `events@music.test`, …).
+Signing up asks which club to join; the verification code is printed in the `runserver` terminal.
 
 ## Tests
 
