@@ -22,7 +22,6 @@ export function StartScreen() {
       {!reducedMotion && (
         <div className={styles.floorStage} aria-hidden="true">
           <div className={styles.floor} />
-          <div className={styles.horizon} />
         </div>
       )}
 
