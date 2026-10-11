@@ -1435,7 +1435,9 @@ Razorpay dashboard, using its `payment_ref`.
 
 ### GET /payments/config
 
-- **Who:** Any logged-in user.
+- **Who:** Public (**changed:** it used to need a login). Call it on page
+  load, before login; a token in the header is ignored. It returns only the
+  two fields below, never the key secret.
 
 Response `200`:
 
@@ -1448,7 +1450,7 @@ Response `200`:
 | `gateway` | string | `mock` or `razorpay`: which purchase flow the frontend should use. |
 | `key_id` | string or `null` | Optional for clients (the order response carries the key as `key`). Razorpay's public key id; `null` when `gateway` is `mock`. The key secret is never returned by any endpoint. |
 
-Errors: `401 not_authenticated`.
+Errors: none of its own (`404 club_not_found` for an unknown `X-Club`).
 
 ### POST /payments/razorpay/order
 

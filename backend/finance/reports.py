@@ -161,6 +161,13 @@ def reconcile():
 
 # Coin Trail --------------------------------------------------------------
 
+def _local(moment):
+    """A timestamp in the site's time zone, as the rest of the API sends them."""
+    from django.utils import timezone
+
+    return timezone.localtime(moment) if moment else None
+
+
 def _coupon_code(order):
     return order.coupon.code if order.coupon_id else None
 
@@ -189,7 +196,7 @@ def _source(entry):
             {
                 'type': 'ticket', 'id': ticket.id, 'code': ticket.code, 'holder': ticket.owner.name,
                 'price_paid': ticket.price_paid, 'status': ticket.status,
-                'checked_in_at': getattr(getattr(ticket, 'checkin', None), 'scanned_at', None),
+                'checked_in_at': _local(getattr(getattr(ticket, 'checkin', None), 'scanned_at', None)),
             }
             for ticket in Ticket.objects.filter(order=line.order, tier=line.tier).select_related('owner', 'checkin')
         ]

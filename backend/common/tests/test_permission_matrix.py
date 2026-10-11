@@ -88,7 +88,7 @@ MATRIX = [
     ('GET', 'api/coupons/<int:pk>', only(P, T)),
     ('PATCH', 'api/coupons/<int:pk>', only(P, T)),
     ('DELETE', 'api/coupons/<int:pk>', only(P, T, ok=404)),
-    ('GET', 'api/payments/config', LOGGED_IN),
+    ('GET', 'api/payments/config', PUBLIC),
     ('POST', 'api/payments/razorpay/order', LOGGED_IN_400),
     ('POST', 'api/payments/razorpay/verify', LOGGED_IN_400),
     ('POST', 'api/payments/razorpay/cancel', LOGGED_IN_400),
