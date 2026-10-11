@@ -1,17 +1,19 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Panel } from '../../components/Panel/Panel';
 import { TextInput } from '../../components/FormField/TextInput';
 import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { Spinner } from '../../components/Spinner/Spinner';
 import { PixelIcon } from '../../components/PixelIcon';
-import type { ApiError, ClubOption } from '../../api/client';
+import { request, type ApiError, type ClubOption } from '../../api/client';
+import { SelectInput } from '../../components/FormField/SelectInput';
 import { env } from '../../core/config/env';
 import { useAuth } from '../../core/hooks/useAuth';
 import { mockAuthApi } from './api.mock';
 import { demoAccountLabel } from './mockUsers';
 import { isValidEmail, MIN_PASSWORD_LENGTH } from './validation';
 import { RESEND_COOLDOWN_SECONDS, VerifyEmailPanel } from './VerifyEmailPanel';
+import { signupClub } from './signupClub';
 import styles from './AuthPage.module.scss';
 
 // The server reports fields by their wire (snake_case) name; our form state
@@ -33,6 +35,7 @@ interface SignupForm {
   collegeId: string;
   password: string;
   confirmPassword: string;
+  club: string;
 }
 
 /** An account that still has to confirm its emailed code. Kept in
@@ -40,6 +43,8 @@ interface SignupForm {
  * losing the visitor's place (it never holds the code or the password). */
 interface PendingVerification {
   email: string;
+  /** Display name of the club being joined, shown on the code screen. */
+  clubName?: string;
   /** When a code was last sent, for the resend cooldown; null if unknown
    * (arrived from a blocked login, so resend is available straight away). */
   sentAt: number | null;
@@ -72,7 +77,7 @@ function remainingCooldown(sentAt: number | null): number {
 }
 
 const EMPTY_LOGIN: LoginForm = { email: '', password: '' };
-const EMPTY_SIGNUP: SignupForm = { name: '', email: '', collegeId: '', password: '', confirmPassword: '' };
+const EMPTY_SIGNUP: SignupForm = { name: '', email: '', collegeId: '', password: '', confirmPassword: '', club: 'skyline' };
 
 interface AuthPageProps {
   initialTab: Tab;
@@ -96,8 +101,23 @@ export function AuthPage({ initialTab }: AuthPageProps) {
   // clubs, so we show them and log in again with the chosen slug.
   const [clubChoices, setClubChoices] = useState<ClubOption[] | null>(null);
 
+  // Public list of clubs for the signup picker. If it can't be fetched (mock
+  // mode, server down) there is nothing to choose and the select stays hidden.
+  const [clubs, setClubs] = useState<ClubOption[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    request<ClubOption[]>('/clubs')
+      .then((list) => {
+        if (!cancelled && Array.isArray(list)) setClubs(list);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [loginForm, setLoginForm] = useState<LoginForm>(EMPTY_LOGIN);
   const [signupForm, setSignupForm] = useState<SignupForm>(EMPTY_SIGNUP);
+  const chosenClub = clubs.find((c) => c.slug === signupForm.club);
   const [pendingVerification, setPendingVerificationState] = useState<PendingVerification | null>(loadPendingVerification);
 
   const setPendingVerification = (pending: PendingVerification | null) => {
@@ -163,7 +183,7 @@ export function AuthPage({ initialTab }: AuthPageProps) {
         // Account created, code emailed, not signed in yet: go to step two.
         setPhase('idle');
         setRedirectReady(true);
-        setPendingVerification({ email: emailToVerify, sentAt: Date.now() });
+        setPendingVerification({ email: emailToVerify, sentAt: Date.now(), clubName: chosenClub?.name });
         return;
       }
       setPhase('success');
@@ -218,7 +238,9 @@ export function AuthPage({ initialTab }: AuthPageProps) {
   const onSignupSubmit = (e: FormEvent) => {
     e.preventDefault();
     void runSubmit(validateSignup, async () => {
+      signupClub.set(signupForm.club);
       const result = await signup({
+        club: signupForm.club,
         name: signupForm.name.trim(),
         email: signupForm.email.trim(),
         collegeId: signupForm.collegeId.trim(),
@@ -272,7 +294,8 @@ export function AuthPage({ initialTab }: AuthPageProps) {
             email={pendingVerification.email}
             initialCooldown={remainingCooldown(pendingVerification.sentAt)}
             notice={pendingVerification.notice}
-            onCodeSent={() => setPendingVerification({ email: pendingVerification.email, sentAt: Date.now() })}
+            clubName={pendingVerification.clubName}
+            onCodeSent={() => setPendingVerification({ email: pendingVerification.email, clubName: pendingVerification.clubName, sentAt: Date.now() })}
             onBack={() => {
               setPendingVerification(null);
               setLoginForm({ email: pendingVerification.email, password: '' });
@@ -334,6 +357,18 @@ export function AuthPage({ initialTab }: AuthPageProps) {
           </form>
         ) : (
           <form id="auth-panel-signup" role="tabpanel" aria-labelledby="auth-tab-signup" onSubmit={onSignupSubmit} noValidate>
+            {clubs.length > 1 && (
+              <div className={styles.clubRow}>
+                <span className={styles.clubDot} style={{ background: chosenClub?.color }} aria-hidden="true" />
+                <SelectInput
+                  label="Club"
+                  required
+                  value={signupForm.club}
+                  onChange={(e) => setSignupForm((f) => ({ ...f, club: e.target.value }))}
+                  options={clubs.map((c) => ({ value: c.slug, label: `${c.short} — ${c.name}` }))}
+                />
+              </div>
+            )}
             <TextInput
               label="Name"
               required
