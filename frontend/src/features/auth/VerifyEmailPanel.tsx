@@ -32,6 +32,8 @@ function messageFor(error: ApiError): string {
 
 interface VerifyEmailPanelProps {
   email: string;
+  /** Name of the club the account is being created in. */
+  clubName?: string;
   /** Seconds the Resend button starts disabled for: 60 straight after
    * signup (a code was just sent), 0 when arriving from a blocked login. */
   initialCooldown: number;
@@ -44,7 +46,7 @@ interface VerifyEmailPanelProps {
 
 /** Step two of signup: enter the 6-digit code that was emailed. A correct
  * code signs the user in (AuthPage then redirects to /home). */
-export function VerifyEmailPanel({ email, initialCooldown, notice, onCodeSent, onBack }: VerifyEmailPanelProps) {
+export function VerifyEmailPanel({ email, clubName, initialCooldown, notice, onCodeSent, onBack }: VerifyEmailPanelProps) {
   const { verifyEmail, resendCode } = useAuth();
 
   const [code, setCode] = useState('');
@@ -101,6 +103,7 @@ export function VerifyEmailPanel({ email, initialCooldown, notice, onCodeSent, o
   return (
     <div>
       <h2 className={styles.verifyTitle}>Verify your email</h2>
+      {clubName && <p className={styles.verifyText}>Joining {clubName}</p>}
       <p className={styles.verifyText}>
         We emailed a {CODE_LENGTH}-digit code to <strong>{email}</strong>. Enter it to finish signing up. The code works for 10 minutes.
       </p>

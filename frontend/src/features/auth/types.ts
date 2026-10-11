@@ -27,6 +27,8 @@ export interface SignupRequest {
   name: string;
   collegeId: string;
   phone?: string;
+  /** Club slug to create the account in (sent as `X-Club`). */
+  club?: string;
 }
 
 export interface AuthResponse {
