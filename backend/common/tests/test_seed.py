@@ -185,7 +185,11 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         self.assertGreater(invite.expires_at, timezone.now() + timedelta(hours=71))
 
     def test_two_past_announcements_with_delivery_logs(self):
-        announcements = list(Announcement.objects.all())
+        # The two published through the real send code have delivery logs;
+        # the thirteen older archive entries are written directly.
+        self.assertEqual(Announcement.objects.count(), 15)
+        self.assertEqual(Announcement.objects.filter(deliveries__isnull=True).distinct().count(), 13)
+        announcements = list(Announcement.objects.filter(deliveries__isnull=False).distinct())
         self.assertEqual(len(announcements), 2)
         for announcement in announcements:
             self.assertLess(announcement.published_at, timezone.now() - timedelta(days=1))
@@ -257,18 +261,21 @@ class SeedDemoTests(TempMediaMixin, TransactionTestCase):
         self.assertEqual(components['membership']['score'], 64)
         self.assertIn('41 of 45', components['membership']['reason'])
         self.assertIn('0 of 4', components['membership']['reason'])
-        # 30 of 35 checked in = 85.7 -> 86.
-        self.assertEqual(components['attendance']['score'], 86)
+        # Freshers Night: 30 of 35 checked in. Six generated past events: 5
+        # sold and 4 checked in each. 54 of 65 = 83.08 -> 83.
+        self.assertEqual(components['attendance']['score'], 83)
+        self.assertIn('54 of 65 tickets were checked in', components['attendance']['reason'])
         # 1 of 4 tasks done.
         self.assertEqual(components['volunteering']['score'], 25)
         # Cash in: dues 2,650,000 (40 members + 5 role accounts) + tickets
-        # 2,870,000 (2,820,000 + the group of ten at the member price of
-        # 5,000) + merch 1,328,000 (1,148,000 + 5 T-shirts at 36,000) +
-        # bake sale 740,000 = 7,588,000 paise. Cash out: payouts of 250,000 +
-        # 80,000 + 500,000 = 830,000. 7,588,000 / 8,418,000 = 90.1 -> 90.
-        self.assertEqual(components['money']['score'], 90)
-        self.assertIn('Rs 75,880.00 came in and Rs 8,300.00 went out', components['money']['reason'])
-        # (64*30 + 86*25 + 25*20 + 90*25) / 100 = 68.2 -> 68.
+        # 3,270,000 (2,820,000 + the group of ten at the member price of
+        # 5,000 + 40 tickets at 10,000 on the eight generated events) +
+        # merch 1,328,000 (1,148,000 + 5 T-shirts at 36,000) + bake sale
+        # 740,000 = 7,988,000 paise. Cash out: payouts of 250,000 + 80,000 +
+        # 500,000 = 830,000. 7,988,000 / 8,818,000 = 90.6 -> 91.
+        self.assertEqual(components['money']['score'], 91)
+        self.assertIn('Rs 79,880.00 came in and Rs 8,300.00 went out', components['money']['reason'])
+        # (64*30 + 83*25 + 25*20 + 91*25) / 100 = 67.7 -> 68.
         self.assertEqual(result['score'], 68)
         self.assertEqual(
             round(sum(component['contribution'] for component in result['components'])), result['score'],

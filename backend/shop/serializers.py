@@ -81,7 +81,8 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'description', 'category', 'base_price', 'sale_pct', 'price', 'image_url', 'active', 'sizes',
+            'id', 'name', 'description', 'category', 'base_price', 'sale_pct', 'price', 'image_url', 'active',
+            'pickup_location', 'sizes',
         ]
         read_only_fields = fields
 
@@ -103,6 +104,7 @@ class ProductWriteSerializer(serializers.ModelSerializer):
     description = serializers.CharField(max_length=MAX_DESCRIPTION, allow_blank=True, required=False)
     base_price = serializers.IntegerField(min_value=1, max_value=MAX_AMOUNT)
     sale_pct = serializers.IntegerField(min_value=0, max_value=90, required=False)
+    pickup_location = serializers.CharField(max_length=200, required=False)
     # Create only: false for a product that does not come in sizes.
     sized = serializers.BooleanField(required=False, default=True, write_only=True)
 
@@ -110,7 +112,7 @@ class ProductWriteSerializer(serializers.ModelSerializer):
         model = Product
         # No stock here: stock only changes through restock or a sale, so
         # every unit is explained by a StockMovement.
-        fields = ['name', 'description', 'category', 'base_price', 'sale_pct', 'active', 'sized']
+        fields = ['name', 'description', 'category', 'base_price', 'sale_pct', 'active', 'pickup_location', 'sized']
 
     def validate_name(self, value):
         taken = Product.objects.filter(name__iexact=value)

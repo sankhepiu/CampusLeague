@@ -38,7 +38,7 @@ from django.utils import timezone
 
 from accounts import roles
 from accounts.models import RoleAssignment, RoleInvite
-from common import pixel_art
+from common import pixel_art, seed_events
 from audit.models import AuditLog
 from comms import services as comms
 from comms.models import Announcement, AnnouncementDelivery
@@ -282,6 +282,31 @@ def seed():
     group_pass = TicketPass.objects.get(order=group.order)
     tickets.scan_pass(operator=leaders['events'], token=group_pass.qr_token, count=3, event_id=meetup.pk)
 
+    # A full calendar: 147 more events, six months back and six ahead -----
+    # Catalogue rows only (bulk-created, nothing sold), except for eight of
+    # them, which get a small extra tier that members really buy:
+    #   6 past events: 5 tickets each at the member price of 100.00, 4 of
+    #     the 5 checked in. On three of them the tier holds exactly 5, so
+    #     it is sold out; on the other three it holds 20.
+    #   2 upcoming events: a tier of 5, all sold: sold out before the day.
+    # That is 40 tickets and 4,000.00 of ticket revenue, each with its own
+    # order, payment and ledger entry.
+    generated = seed_events.build_events(seed_events.SKYLINE_EVENTS, 147, now, leaders['events'])
+    past_generated = [event for event in generated if event.status == Event.Status.CLOSED]
+    upcoming_generated = [event for event in generated if event.status == Event.Status.ON_SALE]
+    regulars = active[:5]
+    for number, event in enumerate(past_generated[5::12][:6]):
+        # Sold while on sale, then closed, exactly as Freshers Night above:
+        # a closed event refuses purchases.
+        Event.objects.filter(pk=event.pk).update(status=Event.Status.ON_SALE)
+        tier = seed_events.add_small_tier(event, name='Members Block', capacity=5 if number % 2 == 0 else 20)
+        sold = _buy_tickets(tier, regulars, f'past-{number}')
+        for ticket in sold[:4]:
+            tickets.scan(operator=leaders['events'], token=ticket.qr_token, event_id=event.pk)
+        Event.objects.filter(pk=event.pk).update(status=Event.Status.CLOSED)
+    for number, event in enumerate(upcoming_generated[3::20][:2]):
+        _buy_tickets(seed_events.add_small_tier(event, name='Limited', capacity=5), regulars, f'soldout-{number}')
+
     # Merchandise ----------------------------------------------------------
     # (name, price, description, picture, category, sale %, {size: (restocked, sold)})
     # Clothing comes in four sizes; everything else has the single size ONE.
@@ -313,6 +338,12 @@ def seed():
     for name, price, description, picture, category, sale_pct, sizes in catalogue:
         product = Product.objects.create(
             name=name, base_price=price, description=description, category=category, sale_pct=sale_pct,
+            # Clothing is tried on at the merch desk; everything else is
+            # handed over at the association's office.
+            pickup_location=(
+                'Skyline Merch Desk, Student Centre Lobby · Mon–Fri 11am–4pm' if category == 'apparel'
+                else 'Skyline Student Centre, Room 2 · Mon–Fri 10am–5pm'
+            ),
         )
         # A fixed file name per product. Any copy left by an earlier seed is
         # removed first, otherwise storage would add a random suffix.
@@ -358,6 +389,24 @@ def seed():
         announcement = comms.publish(author=author, title=title, body=body)
         comms.send_pending(announcement, send=lambda delivery: None)
         Announcement.objects.filter(pk=announcement.pk).update(published_at=now - timedelta(days=days_ago))
+
+    # The rest of the archive: thirteen older notices, written directly
+    # (see seed_events.build_announcements for why they have no delivery log).
+    seed_events.build_announcements([
+        (170, 'Committee for the year announced', 'Meet your new president, treasurer, event manager and volunteer coordinator on the About page.', 'all'),
+        (150, 'Orientation week schedule', 'Campus tours run every morning at 9 from the Clock Tower. Wear comfortable shoes.', 'all'),
+        (131, 'Membership cards are now digital', 'Your card lives on the Membership page. Show the QR code at the door of any event.', 'members'),
+        (118, 'Freshers Night: thank you', 'Thirty of you came, the sound system survived, and the photos are up.', 'all'),
+        (102, 'Call for volunteers: Diwali Mela', 'We need stall leads, decorators and a clean-up crew. Sign up under Volunteering.', 'all'),
+        (88, 'Reimbursements: how to claim', 'Upload the receipt under Expenses within 14 days. The treasurer approves, a second officer pays.', 'members'),
+        (74, 'Hoodies are back in stock', 'All four sizes, same price. Members get 10 percent off at checkout.', 'all'),
+        (60, 'Winter break office hours', 'The association office is open 11 to 2 on weekdays until term restarts.', 'all'),
+        (47, 'Budget summary for last term', 'What came in, what went out and what is left, in three numbers, on the Finance page.', 'members'),
+        (33, 'New in the shop: caps, mugs and more', 'Eight new items, two of them on sale this month.', 'all'),
+        (25, 'Board Games Meetup: group bookings open', 'Book for up to ten friends on one pass. One QR code gets everyone in.', 'all'),
+        (12, 'Bake Sale needs bakers', 'Brownies and cookies are covered. We still need savoury. Tasks are on the Volunteering board.', 'all'),
+        (3, 'Coupon for new members', 'Use WELCOME10 when you join this month for 10 percent off your first year.', 'all'),
+    ], [leaders['president'], leaders['events'], leaders['volunteers'], leaders['treasurer']], now)
 
     # Bake sale fundraiser: tasks with owners, goal bar about half full ----
     bake_sale = Fundraiser.objects.create(
