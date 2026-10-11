@@ -5,13 +5,16 @@ import { EmptyState } from '../../components/EmptyState/EmptyState';
 import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { Spinner } from '../../components/Spinner/Spinner';
 import { StatusBadge } from '../../components/StatusBadge/StatusBadge';
+import { ConfirmDialog } from '../../components/ConfirmDialog/ConfirmDialog';
 import { TextInput } from '../../components/FormField/TextInput';
 import { SelectInput } from '../../components/FormField/SelectInput';
 import type { ApiError } from '../../api/client';
+import type { RoleAssignment } from '../admin/types';
 import { useAsync } from '../../core/hooks/useAsync';
 import { accentVarForFeature } from '../../core/config/accents';
 import { ROLES, ROLE_LABELS, type Role } from '../../core/config/roles';
 import { formatDateTime } from '../../core/utils/formatDateTime';
+import { today, formatDate } from '../membership/dates';
 import { membersApi } from '../members/api';
 import { adminApi } from '../admin/api';
 import { rolesApi } from './api';
@@ -83,17 +86,48 @@ export function RoleAdminPage() {
     }
   };
 
-  const [endError, setEndError] = useState<string | null>(null);
-  const endRole = async (assignmentId: number) => {
-    setEndError(null);
+  const [confirmTarget, setConfirmTarget] = useState<{ id: number; name: string; role: Role } | null>(null);
+  const [endBusyId, setEndBusyId] = useState<number | null>(null);
+  const [endErrors, setEndErrors] = useState<Record<number, string>>({});
+  const [endSuccess, setEndSuccess] = useState<string | null>(null);
+
+  const requestEndRole = (a: RoleAssignment) => {
+    setEndErrors((errs) => {
+      if (!(a.id in errs)) return errs;
+      const next = { ...errs };
+      delete next[a.id];
+      return next;
+    });
+    setConfirmTarget({ id: a.id, name: membersById.get(a.user)?.name ?? `#${a.user}`, role: a.role });
+  };
+
+  const confirmEndRole = async () => {
+    if (!confirmTarget) return;
+    const { id, name, role } = confirmTarget;
+    setConfirmTarget(null);
+    setEndBusyId(id);
+    setEndSuccess(null);
     try {
-      await rolesApi.endAssignment(assignmentId);
-      assignments.reload();
+      await rolesApi.endAssignment(id);
+      await assignments.reload();
+      setEndSuccess(`${name} is no longer ${ROLE_LABELS[role]}`);
     } catch (err) {
       const apiErr = err as ApiError;
-      setEndError(apiErr.code === 'last_president' ? 'The club must always keep at least one current president — nominate a replacement first.' : apiErr.message);
+      setEndErrors((errs) => ({
+        ...errs,
+        [id]: apiErr.code === 'last_president' ? 'A club must always have a president — invite a replacement first.' : apiErr.message,
+      }));
+    } finally {
+      setEndBusyId(null);
     }
   };
+
+  const now = today();
+  const allAssignments = assignments.data?.results ?? [];
+  const currentHolders = allAssignments.filter((a) => a.termStart <= now && a.termEnd >= now);
+  const upcomingHolders = allAssignments.filter((a) => a.termStart > now);
+  const pastHolders = allAssignments.filter((a) => a.termEnd < now).sort((a, b) => b.termEnd.localeCompare(a.termEnd));
+  const [showPast, setShowPast] = useState(false);
 
   return (
     <PageShell title="Roles">
@@ -153,30 +187,104 @@ export function RoleAdminPage() {
       )}
 
       <h2 className={styles.sectionTitle}>Current Role Holders</h2>
-      {endError && <ErrorBox error={endError} />}
+      {endSuccess && <p className={styles.successNote}>{endSuccess}</p>}
       {assignments.status === 'loading' && <Spinner label="Loading role holders…" />}
       {assignments.status === 'error' && <ErrorBox error={assignments.error!} onRetry={assignments.reload} />}
-      {assignments.status === 'success' && (
+      {assignments.status === 'success' && currentHolders.length === 0 && (
+        <Panel className={styles.section}>
+          <EmptyState icon="badge" title="No current role holders" />
+        </Panel>
+      )}
+      {assignments.status === 'success' && currentHolders.length > 0 && (
         <div className={styles.list}>
-          {assignments.data.results.map((a) => (
-            <Panel key={a.id} accent={accentVarForFeature('roleAdmin')}>
-              <div className={styles.row}>
-                <div>
-                  <h3 className={styles.code}>
-                    {membersById.get(a.user)?.name ?? `#${a.user}`} — {ROLE_LABELS[a.role]}
-                  </h3>
-                  <p className={styles.meta}>
-                    {a.termStart} to {a.termEnd}
-                  </p>
-                </div>
-                <button type="button" className={styles.smallButtonDanger} onClick={() => endRole(a.id)}>
-                  End Role
-                </button>
-              </div>
-            </Panel>
+          {currentHolders.map((a) => (
+            <AssignmentCard
+              key={a.id}
+              name={membersById.get(a.user)?.name ?? `#${a.user}`}
+              assignment={a}
+              variant="active"
+              busy={endBusyId === a.id}
+              error={endErrors[a.id]}
+              onEnd={() => requestEndRole(a)}
+            />
           ))}
         </div>
       )}
+
+      {assignments.status === 'success' && upcomingHolders.length > 0 && (
+        <>
+          <h2 className={styles.sectionTitle}>Upcoming</h2>
+          <div className={styles.list}>
+            {upcomingHolders.map((a) => (
+              <AssignmentCard key={a.id} name={membersById.get(a.user)?.name ?? `#${a.user}`} assignment={a} variant="upcoming" />
+            ))}
+          </div>
+        </>
+      )}
+
+      {assignments.status === 'success' && pastHolders.length > 0 && (
+        <>
+          <button type="button" className={styles.collapseToggle} onClick={() => setShowPast((v) => !v)}>
+            Past Roles ({pastHolders.length}) {showPast ? '▾' : '▸'}
+          </button>
+          {showPast && (
+            <div className={styles.list}>
+              {pastHolders.map((a) => (
+                <AssignmentCard key={a.id} name={membersById.get(a.user)?.name ?? `#${a.user}`} assignment={a} variant="past" />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title="End Role"
+        message={confirmTarget ? `End ${confirmTarget.name}'s ${ROLE_LABELS[confirmTarget.role]} role? They lose ${ROLE_LABELS[confirmTarget.role].toLowerCase()} access immediately.` : ''}
+        confirmLabel="End Role"
+        onConfirm={confirmEndRole}
+        onCancel={() => setConfirmTarget(null)}
+      />
     </PageShell>
+  );
+}
+
+function AssignmentCard({
+  name,
+  assignment,
+  variant,
+  busy,
+  error,
+  onEnd,
+}: {
+  name: string;
+  assignment: RoleAssignment;
+  variant: 'active' | 'upcoming' | 'past';
+  busy?: boolean;
+  error?: string;
+  onEnd?: () => void;
+}) {
+  return (
+    <Panel accent={accentVarForFeature('roleAdmin')} className={variant === 'past' ? styles.pastCard : undefined}>
+      <div className={styles.row}>
+        <div>
+          <h3 className={variant === 'past' ? `${styles.code} ${styles.strike}` : styles.code}>
+            {name} — {ROLE_LABELS[assignment.role]}
+          </h3>
+          <p className={styles.meta}>
+            {assignment.termStart} to {assignment.termEnd}
+          </p>
+        </div>
+        {variant === 'active' && <StatusBadge variant="success">Active</StatusBadge>}
+        {variant === 'upcoming' && <StatusBadge variant="info">Starts {formatDate(assignment.termStart)}</StatusBadge>}
+        {variant === 'past' && <StatusBadge variant="danger">Ended {formatDate(assignment.termEnd)}</StatusBadge>}
+      </div>
+      {error && <ErrorBox error={error} />}
+      {variant === 'active' && (
+        <button type="button" className={styles.smallButtonDanger} onClick={onEnd} disabled={busy}>
+          {busy ? <Spinner size={14} label="Ending" /> : 'End Role'}
+        </button>
+      )}
+    </Panel>
   );
 }
