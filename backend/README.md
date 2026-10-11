@@ -74,6 +74,36 @@ live.
 the uploaded receipts in `media/receipts/`. It
 only runs when `DJANGO_DEBUG=true`.
 
+## More clubs (one database schema each)
+
+The site can host several clubs, listed in `CLUBS` in `config/settings.py`.
+Skyline uses the default `public` schema; every other club gets its own
+PostgreSQL schema with a full copy of the tables, constraints and ledger
+triggers. A request picks its club with the `X-Club` header (none = Skyline).
+
+```bash
+python manage.py migrate                  # Skyline (public), as always
+python manage.py seed_demo --reset        # Skyline demo data
+python manage.py setup_clubs              # create, migrate and seed robotics and music
+python manage.py setup_clubs --reset      # rebuild their demo data
+python manage.py setup_clubs --club music # only one club
+```
+
+`setup_clubs` is safe to run again: it creates what is missing and leaves
+existing data alone unless `--reset` is given. **Run it after every new
+migration too**; plain `migrate` only updates Skyline. Like `seed_demo`, it
+refuses to run unless `DJANGO_DEBUG=true`.
+
+Demo accounts (same password as Skyline's): `president@`, `treasurer@`,
+`approver@`, `events@`, `volunteers@` and `member01@` to `member15@`, at
+`robotics.test` and at `music.test`. `member01@skyline.test` to
+`member05@skyline.test` also have accounts in the robotics club, so logging in
+as one of them asks which club to open.
+
+Receipts are stored per club: Skyline's in `media/receipts/`, the others in
+`media/receipts/<club>/`. The Django admin and `scripts/demo.sh` work on
+Skyline only.
+
 ## Demo walkthrough script
 
 ```bash

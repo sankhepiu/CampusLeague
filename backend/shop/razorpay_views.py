@@ -178,7 +178,8 @@ class RazorpayOrderView(RazorpayView):
             'key': settings.RAZORPAY_KEY_ID,
             'amount': order.total,
             'currency': razorpay.CURRENCY,
-            'name': razorpay.MERCHANT_NAME,
+            # What the checkout shows as the merchant: the club being paid.
+            'name': request.club['name'],
             'description': checkout_description(order),
             'prefill': {'name': request.user.name, 'email': request.user.email},
         }

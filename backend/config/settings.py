@@ -120,7 +120,19 @@ REST_FRAMEWORK = {
 # at this model.
 AUTH_USER_MODEL = 'accounts.User'
 
+# The clubs sharing this site, one PostgreSQL schema each (see
+# common/clubs.py). Skyline is in "public", where all data lived before
+# there was more than one club. Run `manage.py setup_clubs` to create and
+# seed the other schemas.
+CLUBS = {
+    'skyline': {'name': 'Skyline Student Association', 'schema': 'public', 'color': '#f5c542', 'short': 'SSA'},
+    'robotics': {'name': 'Pixel Robotics Club', 'schema': 'robotics', 'color': '#4fd1c5', 'short': 'PRC'},
+    'music': {'name': 'Raaga Music Society', 'schema': 'music', 'color': '#f472b6', 'short': 'RMS'},
+}
+
 MIDDLEWARE = [
+    # First: chooses the club's database schema before anything else runs.
+    'common.clubs.ClubMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',

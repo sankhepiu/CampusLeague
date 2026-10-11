@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -19,6 +20,10 @@ class Command(BaseCommand):
             '--reset', action='store_true',
             help='Delete ALL users, memberships, events, tickets, orders, ledger and audit rows first.',
         )
+        parser.add_argument(
+            '--club', default='skyline',
+            help='Which club to seed (a slug from settings.CLUBS). Default: skyline.',
+        )
 
     def handle(self, *args, **options):
         if not settings.DEBUG:
@@ -26,6 +31,11 @@ class Command(BaseCommand):
                 'Refusing to run: DJANGO_DEBUG is not true. This command creates accounts '
                 'with a published password and can erase the ledger.'
             )
+        if options['club'] != 'skyline':
+            # The other clubs live in their own schemas and have a smaller
+            # seed; setup_clubs creates the schema if needed, then seeds it.
+            call_command('setup_clubs', club=options['club'], reset=options['reset'], stdout=self.stdout)
+            return
         if not options['reset'] and get_user_model().objects.exists():
             raise CommandError('The database already has users. Re-run with --reset to wipe and rebuild.')
 

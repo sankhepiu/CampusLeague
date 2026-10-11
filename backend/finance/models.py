@@ -117,7 +117,19 @@ def receipt_path(instance, filename):
     # be guessed, or smuggle in a path. The extension is validated before
     # this runs.
     extension = filename.rsplit('.', 1)[-1].lower()
-    return f'receipts/{uuid.uuid4().hex}.{extension}'
+    return f'{receipt_folder()}{uuid.uuid4().hex}.{extension}'
+
+
+def receipt_folder(club=None):
+    """Where a club's receipts are stored, relative to MEDIA_ROOT. Skyline
+    keeps "receipts/", where its files have always been; every other club
+    has its own folder below that, so two clubs' files never mix and one
+    club's cleanup cannot touch another's.
+    """
+    from common.clubs import DEFAULT_CLUB, current_club
+
+    club = club or current_club()
+    return 'receipts/' if club == DEFAULT_CLUB else f'receipts/{club}/'
 
 
 class ExpenseRequest(TimeStampedModel):
