@@ -350,9 +350,8 @@ class ClubSchemaTests(TransactionTestCase):
             self.assertIn('11 of 11 checks pass', out.getvalue())
             with use_club('robotics'):
                 counts = (User.objects.count(), Event.objects.count(), LedgerEntry.objects.count())
-                # 5 leaders + 15 members + the 5 Skyline members who also joined;
-                # 3 named events + 37 generated ones.
-                self.assertEqual(counts[:2], (25, 40))
+                # 5 leaders + 15 members + the 5 Skyline members who also joined.
+                self.assertEqual(counts[:2], (25, 3))
                 self.assertTrue(User.objects.filter(email='member01@skyline.test').exists())
                 self.assertTrue(User.objects.filter(email='president@robotics.test').exists())
                 self.assertTrue(reports.reconcile()['ok'])

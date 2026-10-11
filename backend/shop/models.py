@@ -221,8 +221,6 @@ class Product(TimeStampedModel):
     category = models.CharField(max_length=12, choices=Category.choices, default=Category.APPAREL)
     # Percent off base_price for everyone, before any member discount.
     sale_pct = models.PositiveSmallIntegerField(default=0)
-    # ADDITION: where and when a buyer collects the item (nothing is posted).
-    pickup_location = models.CharField(max_length=200, default='Student Centre, Room 2')
 
     class Meta:
         ordering = ['name', 'id']

@@ -1213,7 +1213,6 @@ event, tier or product. Every endpoint that returns an order includes it:
 | `price` | integer | What **the caller** would pay per item now: `base_price`, less the sale, less their plan's `merch_discount_pct` if their membership is active (in that order, each step rounded down). Display this one. A coupon is applied at checkout, after both. |
 | `image_url` | string or `null` | Path of the product picture relative to the site root, `/media/products/<file>.png`, to load through the frontend's `/media` proxy; `null` when there is none. Replaces the earlier `image` field. **Assumption:** there is no upload endpoint; the seed provides the pictures. |
 | `active` | boolean | Inactive products are returned to shop staff only. |
-| `pickup_location` | string | **New.** Where and when the buyer collects the item (nothing is posted), ready to display, for example `Skyline Student Centre, Room 2 · Mon–Fri 10am–5pm`. Max 200. Default `Student Centre, Room 2`. Shop staff can set it with `POST /products` and `PATCH /products/{id}`. |
 | `sizes` | array | `{ "id", "size", "stock" }`. Clothing has `S`, `M`, `L`, `XL` in that order. **New:** a product that does not come in sizes has exactly one entry, with `size` `ONE`, holding its stock; do not show a size picker for it. Use `id` when ordering either kind. |
 
 ## GET /products
@@ -1229,7 +1228,6 @@ Response `200`: a paginated list of product objects.
   "id": 1, "name": "Skyline Hoodie", "description": "Heavyweight fleece with the club crest.",
   "category": "apparel", "base_price": 120000, "sale_pct": 0, "price": 96000,
   "image_url": "/media/products/skyline-hoodie.png", "active": true,
-  "pickup_location": "Skyline Merch Desk, Student Centre Lobby · Mon–Fri 11am–4pm",
   "sizes": [ { "id": 1, "size": "S", "stock": 8 }, { "id": 2, "size": "M", "stock": 5 },
              { "id": 3, "size": "L", "stock": 6 }, { "id": 4, "size": "XL", "stock": 1 } ]
 }
@@ -1592,8 +1590,8 @@ Errors:
 - **Who:** President, treasurer or event manager.
 - **Product fields:** `name` (unique ignoring case, max 100), `base_price`
   (required on create); `description`, `active`, `category` (default
-  `apparel`), `sale_pct` (0 to 90, default 0), `pickup_location` (max 200).
-  PATCH accepts any subset. The picture and stock cannot be set here.
+  `apparel`), `sale_pct` (0 to 90, default 0). PATCH accepts any subset. The
+  picture and stock cannot be set here.
 - **Sizes:** on create only, `sized` (boolean, default `true`).
   **Assumption:** a sized product gets `S`, `M`, `L`, `XL`; with
   `"sized": false` it gets the single size `ONE`. All start at zero stock,
