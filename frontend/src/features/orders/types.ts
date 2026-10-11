@@ -13,15 +13,26 @@ export interface OrderLine {
   productSize: number | null;
   qty: number;
   unitPrice: number; // paise
-  discount: number; // paise, total for this line
+  /** Paise, every discount on this line together: sale, member and coupon. */
+  discount: number;
+  /** Paise: the part of `discount` that came from the order's coupon. */
+  couponDiscount: number;
 }
 
 export interface Order {
   id: number;
   status: OrderStatus;
   subtotal: number;
+  /** Paise, every discount together (sale, member and coupon).
+   * `total = subtotal - discount`, always. */
   discount: number;
+  /** The coupon code used, or null. */
+  coupon: string | null;
+  /** Paise: the part of `discount` that came from the coupon; 0 without one. */
+  couponDiscount: number;
   total: number;
+  /** True only on a cancelled order whose buyer was charged but got nothing. */
+  needsRefund: boolean;
   paymentRef: string;
   createdAt: string;
   lines: OrderLine[];

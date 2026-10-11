@@ -1,0 +1,22 @@
+.field {
+  margin: 0.75rem 0;
+}
+
+.valid {
+  color: var(--cl-color-success, #5fd68a);
+  font-size: 0.85rem;
+  margin: 0.4rem 0;
+}
+
+.invalid {
+  color: var(--cl-color-danger);
+  font-size: 0.85rem;
+  margin: 0.4rem 0;
+}
+
+.total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  margin: 0.4rem 0 0;
+}

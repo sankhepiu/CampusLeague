@@ -168,11 +168,13 @@ export const realTicketsApi = {
 
   // GAP: not yet in docs/API_CONTRACT.md — see the matching comment in
   // features/membership/api.real.ts for the shape this was built against.
-  async createRazorpayOrder(eventId: number, tier: number, quantity: number, idempotencyKey: string): Promise<RazorpayOrderInfo> {
+  async createRazorpayOrder(eventId: number, tier: number, quantity: number, idempotencyKey: string, coupon?: string): Promise<RazorpayOrderInfo> {
     return fromWireRazorpayOrderInfo(
       await request<WireRazorpayOrderInfo>('/payments/razorpay/order', {
         method: 'POST',
-        body: { purpose: 'tickets', event: eventId, tier, quantity },
+        // The coupon has to go with the order: Razorpay charges what the
+        // server prices here, so leaving it out charges the full price.
+        body: { purpose: 'tickets', event: eventId, tier, quantity, ...(coupon ? { coupon } : {}) },
         headers: { 'Idempotency-Key': idempotencyKey },
       }),
     );

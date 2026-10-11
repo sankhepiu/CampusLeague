@@ -56,16 +56,33 @@ function RoleAssignments() {
   );
 }
 
+/** Every action the backend writes (docs/API_CONTRACT.md, "GET /audit"),
+ * with a label a person can read. The value is what `?action=` takes. */
+const ACTION_LABELS: Record<string, string> = {
+  'role.invited': 'Role invite sent',
+  'role.assigned': 'Role accepted and assigned',
+  'role.invite_declined': 'Role invite declined',
+  'role.invite_revoked': 'Role invite revoked',
+  'role.ended': 'Role ended',
+  'stock.restocked': 'Stock restocked',
+  'order.refund_due': 'Order refund due',
+  'expense.approved': 'Expense approved',
+  'expense.rejected': 'Expense rejected',
+  'expense.paid': 'Expense paid',
+  'savefile.created': 'Save file created',
+  'savefile.updated': 'Save file updated',
+};
+
 const ACTION_OPTIONS = [
   { value: '', label: 'All actions' },
-  { value: 'role.assigned', label: 'role.assigned' },
-  { value: 'expense.approved', label: 'expense.approved' },
-  { value: 'expense.rejected', label: 'expense.rejected' },
-  { value: 'expense.paid', label: 'expense.paid' },
-  { value: 'stock.restocked', label: 'stock.restocked' },
-  { value: 'savefile.updated', label: 'savefile.updated' },
-  { value: 'savefile.created', label: 'savefile.created' },
+  ...Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label: `${label} (${value})` })),
 ];
+
+/** Readable label for a row; an action this build does not know yet is
+ * shown as the server sent it. */
+function actionLabel(action: string): string {
+  return ACTION_LABELS[action] ?? action;
+}
 
 function AuditLog() {
   const [action, setAction] = useState('');
@@ -75,7 +92,7 @@ function AuditLog() {
   const columns: DataTableColumn<AuditLogItem>[] = [
     { key: 'at', header: 'When', render: (a) => formatDateTime(a.at) },
     { key: 'actor', header: 'Actor', render: (a) => a.actor?.name ?? 'System' },
-    { key: 'action', header: 'Action', render: (a) => a.action },
+    { key: 'action', header: 'Action', render: (a) => <span title={a.action}>{actionLabel(a.action)}</span> },
     { key: 'object', header: 'Object', render: (a) => `${a.objectType} #${a.objectId}` },
     {
       key: 'diff',

@@ -42,9 +42,45 @@
   margin-right: 0.5rem;
 }
 
+.lineAmount {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  text-align: right;
+}
+
+.lineDiscount {
+  font-size: 0.75rem;
+  color: var(--cl-color-text-muted);
+}
+
+.listPrice {
+  text-decoration: line-through;
+  margin-right: 0.35rem;
+}
+
+.coupon {
+  color: var(--cl-color-text);
+}
+
+.couponCode {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.55rem;
+  padding: 0.1rem 0.35rem;
+  border: 2px solid var(--cl-color-border);
+}
+
+.refundNote {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  text-align: right;
+  color: var(--cl-color-danger, #ff6b81);
+}
+
 .totals {
   display: flex;
-  gap: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
   justify-content: flex-end;
   margin-top: 0.75rem;
   font-size: 0.85rem;

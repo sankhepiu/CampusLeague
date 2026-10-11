@@ -176,11 +176,17 @@ export const realShopApi = {
 
   // GAP: not yet in docs/API_CONTRACT.md — see the matching comment in
   // features/membership/api.real.ts for the shape this was built against.
-  async createRazorpayOrder(items: PlaceOrderRequest['items'], idempotencyKey: string): Promise<RazorpayOrderInfo> {
+  async createRazorpayOrder(items: PlaceOrderRequest['items'], idempotencyKey: string, coupon?: string): Promise<RazorpayOrderInfo> {
     return fromWireRazorpayOrderInfo(
       await request<WireRazorpayOrderInfo>('/payments/razorpay/order', {
         method: 'POST',
-        body: { purpose: 'merch', items: items.map((i) => ({ product_size: i.productSize, ...(i.quantity !== undefined ? { quantity: i.quantity } : {}) })) },
+        // The coupon has to go with the order: Razorpay charges what the
+        // server prices here, so leaving it out charges the full amount.
+        body: {
+          purpose: 'merch',
+          items: items.map((i) => ({ product_size: i.productSize, ...(i.quantity !== undefined ? { quantity: i.quantity } : {}) })),
+          ...(coupon ? { coupon } : {}),
+        },
         headers: { 'Idempotency-Key': idempotencyKey },
       }),
     );

@@ -123,10 +123,10 @@ export const realMembershipApi = {
     return page.results.map(fromWirePlan);
   },
 
-  async purchase({ plan, testOutcome }: PurchaseRequest, idempotencyKey: string): Promise<PurchaseResult> {
+  async purchase({ plan, testOutcome, coupon }: PurchaseRequest, idempotencyKey: string): Promise<PurchaseResult> {
     const { status, data: result } = await requestWithStatus<WirePurchaseResult>('/memberships', {
       method: 'POST',
-      body: { plan, ...(testOutcome ? { test_outcome: testOutcome } : {}) },
+      body: { plan, ...(testOutcome ? { test_outcome: testOutcome } : {}), ...(coupon ? { coupon } : {}) },
       headers: { 'Idempotency-Key': idempotencyKey },
     });
     return {
@@ -153,11 +153,13 @@ export const realMembershipApi = {
   // /verify takes our own order_id plus the three razorpay_* fields and
   // returns the same body as a mock-gateway purchase; /cancel just takes
   // our order_id.
-  async createRazorpayOrder(planId: number, idempotencyKey: string): Promise<RazorpayOrderInfo> {
+  async createRazorpayOrder(planId: number, idempotencyKey: string, coupon?: string): Promise<RazorpayOrderInfo> {
     return fromWireRazorpayOrderInfo(
       await request<WireRazorpayOrderInfo>('/payments/razorpay/order', {
         method: 'POST',
-        body: { purpose: 'membership', plan: planId },
+        // The coupon has to go with the order: Razorpay charges what the
+        // server prices here, so leaving it out charges the full price.
+        body: { purpose: 'membership', plan: planId, ...(coupon ? { coupon } : {}) },
         headers: { 'Idempotency-Key': idempotencyKey },
       }),
     );

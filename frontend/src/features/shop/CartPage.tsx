@@ -217,7 +217,7 @@ export function CartPage() {
               {phase === 'error' && error && <ErrorBox error={razorpayErrorMessage(error)} />}
               <div className={styles.actions}>
                 <RazorpayPayButton
-                  amountPaise={estimatedSubtotal}
+                  amountPaise={grandTotal}
                   disabled={busy}
                   createOrder={() => {
                     const key = crypto.randomUUID();
@@ -225,6 +225,7 @@ export function CartPage() {
                     return shopApi.createRazorpayOrder(
                       items.map((i) => ({ productSize: i.productSizeId, quantity: i.quantity })),
                       key,
+                      appliedCoupon,
                     );
                   }}
                   onVerified={onRazorpayVerified}
