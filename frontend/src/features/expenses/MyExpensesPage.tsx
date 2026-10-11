@@ -64,7 +64,7 @@ export function MyExpensesPage() {
                   <div className={styles.approvalBox}>
                     {expense.approval.decision === 'approved' ? 'Approved' : 'Rejected'} by {expense.approval.approver.name} on{' '}
                     {formatDateOnly(expense.approval.decidedAt)}
-                    {expense.approval.reason && <> — {expense.approval.reason}</>}
+                    {expense.approval.reason && <>: {expense.approval.reason}</>}
                   </div>
                 )}
               </Panel>

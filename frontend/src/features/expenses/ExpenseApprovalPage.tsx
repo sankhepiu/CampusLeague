@@ -41,6 +41,18 @@ function allowedTargets(current: ExpenseStatus): ExpenseStatus[] {
 }
 
 const DRAG_MIME = 'text/plain';
+const MIN_REASON = 5;
+
+/** A rejection is a normal outcome, not a failure: a calm line, never an ErrorBox. */
+function RejectionNote({ expense }: { expense: Expense }) {
+  if (expense.status !== 'rejected' || !expense.approval) return null;
+  const { approver, decidedAt, reason } = expense.approval;
+  return (
+    <p className={styles.rejectionNote}>
+      Rejected by {approver.name} on {formatDateOnly(decidedAt)}{reason ? `: ${reason}` : ''}
+    </p>
+  );
+}
 
 export function ExpenseApprovalPage() {
   const { user } = useAuth();
@@ -128,8 +140,8 @@ function ExpenseRow({ expense, currentUserId, onChanged }: { expense: Expense; c
   };
 
   const submitReject = async () => {
-    if (!rejectReason.trim()) {
-      setRejectValidation('A reason is required to reject a request.');
+    if (rejectReason.trim().length < MIN_REASON) {
+      setRejectValidation(`Give a reason of at least ${MIN_REASON} characters.`);
       return;
     }
     setRejectValidation(null);
@@ -178,6 +190,8 @@ function ExpenseRow({ expense, currentUserId, onChanged }: { expense: Expense; c
         <StatusBadge variant={STATUS_VARIANT[expense.status]}>{expense.status}</StatusBadge>
       </div>
 
+      <RejectionNote expense={expense} />
+
       {actionError && <ErrorBox error={actionError} />}
 
       {isOwnRequest ? (
@@ -196,7 +210,7 @@ function ExpenseRow({ expense, currentUserId, onChanged }: { expense: Expense; c
           )}
           {showReject && expense.status === 'submitted' && (
             <div className={styles.rejectForm}>
-              <textarea className={styles.textarea} placeholder="Reason for rejection (required)" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+              <textarea className={styles.textarea} placeholder="Reason for rejection (at least 5 characters)" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
               {rejectValidation && <p className={styles.error}>{rejectValidation}</p>}
               <div className={styles.actions}>
                 <button type="button" className={`${styles.button} ${styles.buttonDanger}`} onClick={submitReject} disabled={busy}>
@@ -423,7 +437,7 @@ function ExpenseCard({
 
       {expense.description && <p className={styles.cardDescription}>{expense.description}</p>}
 
-      {expense.approval?.reason && <p className={styles.cardMeta}>Reason: {expense.approval.reason}</p>}
+      {expense.status === 'rejected' ? <RejectionNote expense={expense} /> : expense.approval?.reason && <p className={styles.cardMeta}>Reason: {expense.approval.reason}</p>}
 
       {isOwnRequest && <p className={styles.selfNote}>Needs another approver.</p>}
 
@@ -492,8 +506,8 @@ function RejectReasonModal({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!reason.trim()) {
-      setValidation('A reason is required to reject a request.');
+    if (reason.trim().length < MIN_REASON) {
+      setValidation(`Give a reason of at least ${MIN_REASON} characters.`);
       return;
     }
     onConfirm(reason.trim());
@@ -507,7 +521,7 @@ function RejectReasonModal({
         </h2>
         <textarea
           className={styles.textarea}
-          placeholder="Reason for rejection (required)"
+          placeholder="Reason for rejection (at least 5 characters)"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           autoFocus

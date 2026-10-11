@@ -22,6 +22,7 @@ import { razorpayErrorMessage } from '../payments/errors';
 import type { RazorpayVerifyFields } from '../payments/types';
 import type { PaymentTestOutcome, PlaceOrderResult } from './types';
 import { LIMIT_REACHED_MESSAGE, MAX_PER_ITEM } from './limits';
+import { pickupOrDefault } from './pickup';
 import styles from './CartPage.module.scss';
 
 type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error' | 'cancelled';
@@ -75,6 +76,7 @@ export function CartPage() {
   const couponDiscount = couponResult?.valid ? couponResult.discount : 0;
   const appliedCoupon = couponResult?.valid ? couponCode.trim().toUpperCase() : undefined;
   const grandTotal = breakdown.preCouponTotal - couponDiscount;
+  const pickupLocations = [...new Set(items.map((i) => pickupOrDefault(i.pickupLocation)))];
 
   const checkout = async (key: string) => {
     setPhase('submitting');
@@ -199,6 +201,7 @@ export function CartPage() {
             ))}
           </ul>
           <OrderSummaryBreakdown breakdown={breakdown} couponCode={appliedCoupon} couponDiscount={couponDiscount} total={grandTotal} />
+          <p className={styles.estimateNote}>Collect from: {pickupLocations.join(' · ')}</p>
           <p className={styles.estimateNote}>The server works out the final price and any member discount when you pay.</p>
 
           {phase === 'pending' && (
@@ -311,6 +314,7 @@ export function CartPage() {
         )}
 
         <OrderSummaryBreakdown breakdown={breakdown} couponCode={appliedCoupon} couponDiscount={couponDiscount} total={grandTotal} />
+        <p className={styles.estimateNote}>Collect from: {pickupLocations.join(' · ')}</p>
         <p className={styles.estimateNote}>Final subtotal, discount and total are decided by the server when you pay.</p>
         <p className={styles.estimateNote}>
           Limit {MAX_PER_ITEM} per item.

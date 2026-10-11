@@ -1,4 +1,5 @@
 import { request, requestWithStatus, type Paginated } from '../../api/client';
+import { pickupOrDefault } from './pickup';
 import type { PlaceOrderRequest, PlaceOrderResult, Product, ProductDraft, ProductSize, RestockRequest, ShopOrder, ShopOrderLine, ShopPayment } from './types';
 import type { RazorpayOrderInfo, RazorpayVerifyFields } from '../payments/types';
 
@@ -13,6 +14,7 @@ interface WireProduct {
   name: string;
   description: string;
   category: Product['category'];
+  pickup_location?: string | null;
   base_price: number;
   sale_pct: number;
   price: number;
@@ -87,6 +89,7 @@ function fromWireProduct(p: WireProduct): Product {
     name: p.name,
     description: p.description,
     category: p.category,
+    pickupLocation: pickupOrDefault(p.pickup_location),
     basePrice: p.base_price,
     salePct: p.sale_pct,
     price: p.price,
