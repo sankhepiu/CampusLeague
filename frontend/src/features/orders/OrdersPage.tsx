@@ -9,6 +9,7 @@ import { StatusBadge, type StatusBadgeVariant } from '../../components/StatusBad
 import { useAsync } from '../../core/hooks/useAsync';
 import { accentVarForFeature } from '../../core/config/accents';
 import { formatDateTime } from '../../core/utils/formatDateTime';
+import { pickupOrDefault } from '../shop/pickup';
 import { ordersApi } from './api';
 import type { Order, OrderKind, OrderStatus } from './types';
 import styles from './OrdersPage.module.scss';
@@ -62,6 +63,10 @@ export function OrdersPage() {
                   </span>
                   <StatusBadge variant={STATUS_VARIANT[order.status]}>{order.status}</StatusBadge>
                 </div>
+
+                {order.lines.some((l) => l.kind === 'merch') && (
+                  <p className={styles.orderMeta}>Collect from: {pickupOrDefault(undefined)}</p>
+                )}
 
                 <ul className={styles.lines}>
                   {order.lines.map((line) => (

@@ -312,3 +312,12 @@
   opacity: 0.4;
   cursor: default;
 }
+
+.rejectionNote {
+  margin: 0.5rem 0;
+  padding: 0.4rem 0.6rem;
+  border-left: 4px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text-muted);
+  font-size: 0.8rem;
+}

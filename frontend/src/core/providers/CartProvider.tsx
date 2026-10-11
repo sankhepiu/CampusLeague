@@ -16,6 +16,7 @@ export interface CartItem {
   /** Price after the sale discount but before any member discount — lets the
    * cart show "sale" and "member" as two separate summary lines. */
   unitSalePriceEstimate: number;
+  pickupLocation?: string;
   quantity: number;
 }
 
