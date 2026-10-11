@@ -2,6 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../core/hooks/useAuth';
 import { useOptions } from '../../core/hooks/useOptions';
 import { useSound } from '../../core/hooks/useSound';
+import { useCurrentClub } from '../../core/hooks/useCurrentClub';
 import { navItemsForRoles } from '../../core/routes/navItems';
 import { PixelIcon } from '../PixelIcon';
 import styles from './TopBar.module.scss';
@@ -11,6 +12,8 @@ export function TopBar() {
   const { options, toggleMuted } = useOptions();
   const { playSound } = useSound();
   const location = useLocation();
+  // Re-read when the user changes: logging in to another club changes it.
+  const club = useCurrentClub(user?.id ?? null);
 
   if (!user) {
     // A handful of pages (events browsing) are public — still show a brand
@@ -54,6 +57,9 @@ export function TopBar() {
 
       <div className={styles.controls}>
         <span className={styles.userBadge}>{user.name}</span>
+        <span className={styles.clubBadge} style={{ background: club.color }} title={club.name} aria-label={`Club: ${club.name}`}>
+          {club.short}
+        </span>
         <button
           type="button"
           className={styles.iconButton}
