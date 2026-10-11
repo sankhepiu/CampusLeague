@@ -164,7 +164,7 @@ export const realMembershipApi = {
   },
 
   async verifyRazorpayPayment(orderId: number, fields: RazorpayVerifyFields): Promise<PurchaseResult> {
-    const result = await request<WirePurchaseResult>('/payments/razorpay/verify', {
+    const { status, data: result } = await requestWithStatus<WirePurchaseResult>('/payments/razorpay/verify', {
       method: 'POST',
       body: {
         order_id: orderId,
@@ -177,7 +177,10 @@ export const realMembershipApi = {
       order: fromWireOrder(result.order),
       payment: result.payment ? fromWirePayment(result.payment) : null,
       membership: result.membership ? fromWireMembership(result.membership) : null,
-      replayed: false,
+      // The contract says a repeat verify of the same payment returns 200
+      // with the same body and charges nothing — same replay semantics as
+      // every other purchase endpoint.
+      replayed: status === 200,
     };
   },
 

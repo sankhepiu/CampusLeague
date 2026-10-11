@@ -23,6 +23,10 @@ export function CheckinPage() {
   const [result, setResult] = useState<ScanOutcome | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Only matters for a group pass — ignored by the server for a ticket or
+  // member card. Set once before scanning since we can't know ahead of time
+  // which kind of code a camera scan will turn out to be.
+  const [admitCount, setAdmitCount] = useState(1);
 
   const lastScan = useRef<{ value: string; at: number } | null>(null);
   const resultRef = useRef<ScanOutcome | null>(null);
@@ -39,20 +43,21 @@ export function CheckinPage() {
       setSubmitError(null);
       try {
         const eventId = selectedEvent ? Number(selectedEvent) : undefined;
-        const ticket = await checkinApi.scan({ ...params, event: eventId });
-        // A scanned QR is either a ticket or a member card, and the two are
-        // opaque strings we can't tell apart. So: try it as a ticket first;
-        // only if the server says it is not a valid ticket, ask whether it
-        // is a member card. A member-card lookup records nothing, so the
-        // second question is harmless. (Typed codes are always tickets.)
-        if (ticket.result === 'invalid' && params.token) {
+        const outcome = await checkinApi.scan({ ...params, count: admitCount, event: eventId });
+        // A scanned QR is a ticket, a group pass, or a member card, and
+        // they're opaque strings we can't tell apart up front. The server
+        // (or mock) already tried pass-then-ticket; only when it comes back
+        // as an invalid ticket do we ask whether it's a member card instead.
+        // A member-card lookup records nothing, so the extra question is
+        // harmless. (Typed codes are always tickets.)
+        if (outcome.kind === 'ticket' && outcome.result === 'invalid' && params.token) {
           const member = await checkinApi.scanMember(params.token);
           if (member.result !== 'invalid') {
             setResult({ kind: 'member', ...member });
             return;
           }
         }
-        setResult({ kind: 'ticket', ...ticket });
+        setResult(outcome);
       } catch (err) {
         setSubmitError((err as { message?: string }).message ?? 'Could not reach the check-in service.');
       } finally {
@@ -60,7 +65,7 @@ export function CheckinPage() {
         setSubmitting(false);
       }
     },
-    [selectedEvent],
+    [selectedEvent, admitCount],
   );
 
   const onDecode = useCallback(
@@ -130,10 +135,23 @@ export function CheckinPage() {
 
         <Panel>
           {submitError && <ErrorBox error={submitError} onRetry={() => setSubmitError(null)} />}
+
+          <div className={styles.admitCountRow}>
+            <span>Admit how many</span>
+            <button type="button" className={styles.qtyButton} onClick={() => setAdmitCount((c) => Math.max(1, c - 1))} disabled={admitCount <= 1}>
+              −
+            </button>
+            <span className={styles.admitCountValue}>{admitCount}</span>
+            <button type="button" className={styles.qtyButton} onClick={() => setAdmitCount((c) => Math.min(10, c + 1))} disabled={admitCount >= 10}>
+              +
+            </button>
+            <span className={styles.admitCountHint}>Only used for a group pass — ignored for a single ticket.</span>
+          </div>
+
           <form onSubmit={onManualSubmit} className={styles.manualForm}>
             <TextInput
               label="Manual entry"
-              hint="Type the 8-character ticket code, or paste the full text of a ticket or member-card QR."
+              hint="Type the 8-character ticket code, or paste the full text of a ticket, pass or member-card QR."
               placeholder="e.g. K7MPQ2XD"
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
@@ -190,8 +208,53 @@ function MemberCardResult({ result, onScanNext }: { result: MemberScanResponse; 
   );
 }
 
+function PassScanOverlay({ result, onScanNext }: { result: Extract<ScanOutcome, { kind: 'pass' }>; onScanNext: () => void }) {
+  const variantClass = result.result === 'admitted' ? styles.resultOk : result.result === 'wrong_event' || result.result === 'invalid' ? styles.resultDanger : styles.resultWarn;
+  const title =
+    result.result === 'admitted'
+      ? 'Admitted'
+      : result.result === 'already_used'
+        ? 'Pass Already Used'
+        : result.result === 'wrong_event'
+          ? 'Wrong Event'
+          : 'Invalid Pass';
+  const icon = result.result === 'admitted' ? '✓' : result.result === 'wrong_event' || result.result === 'invalid' ? '✕' : '⟳';
+  const isActiveMember = result.membershipStatus === 'active';
+
+  return (
+    <div className={`${styles.resultOverlay} ${variantClass}`} role="status" aria-live="assertive">
+      <div>
+        <p className={styles.resultKind}>Group pass</p>
+        <div className={styles.resultIcon}>{icon}</div>
+        <h2 className={styles.resultTitle}>{title}</h2>
+
+        {result.holder && <p className={styles.resultDetail}>{result.holder.name}</p>}
+        {result.tier && <p className={styles.resultDetail}>{result.tier.name}</p>}
+
+        {result.total !== null && (
+          <p className={styles.resultSub}>
+            Admitted {result.admitted} of {result.total} — {result.remaining} remaining
+          </p>
+        )}
+        {result.result === 'admitted' && <p className={styles.resultSub}>{result.admittedNow} admitted on this scan.</p>}
+
+        {result.membershipStatus !== null && (
+          <p className={isActiveMember ? `${styles.resultSub} ${styles.resultOk}` : `${styles.resultSub} ${styles.resultWarn}`}>
+            {isActiveMember ? 'Active member' : 'Not a member'}
+          </p>
+        )}
+
+        <button type="button" className={styles.scanNextButton} onClick={onScanNext} autoFocus>
+          Scan Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ResultOverlay({ result, onScanNext }: { result: ScanOutcome; onScanNext: () => void }) {
   if (result.kind === 'member') return <MemberCardResult result={result} onScanNext={onScanNext} />;
+  if (result.kind === 'pass') return <PassScanOverlay result={result} onScanNext={onScanNext} />;
 
   const variantClass = result.result === 'ok' ? styles.resultOk : styles.resultDanger;
 

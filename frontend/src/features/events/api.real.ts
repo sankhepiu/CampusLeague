@@ -1,7 +1,9 @@
 import { request, type Paginated } from '../../api/client';
+import { fromWirePass, type WirePass } from '../tickets/api.real';
 import type {
   Attendance,
   AttendanceTierRow,
+  EventDetail,
   EventDraft,
   EventItem,
   EventStatus,
@@ -18,9 +20,11 @@ interface WireTier {
   member_price: number;
   price: number;
   capacity: number;
+  sold: number;
   seats_left: number;
   sale_opens: string | null;
   sale_closes: string | null;
+  sale_open: boolean;
 }
 
 interface WireEvent {
@@ -33,6 +37,17 @@ interface WireEvent {
   capacity_total: number;
   status: EventStatus;
   tiers: WireTier[];
+}
+
+interface WireEventDetail extends WireEvent {
+  organiser: { name: string };
+  capacity: number;
+  sold: number;
+  seats_left: number;
+  checked_in: number;
+  my_passes: WirePass[];
+  revenue?: number;
+  attendance_pct?: number | null;
 }
 
 interface WireAttendanceTier {
@@ -77,9 +92,11 @@ function fromWireTier(t: WireTier): Tier {
     memberPrice: t.member_price,
     price: t.price,
     capacity: t.capacity,
+    sold: t.sold,
     seatsLeft: t.seats_left,
     saleOpens: t.sale_opens,
     saleCloses: t.sale_closes,
+    saleOpen: t.sale_open,
   };
 }
 
@@ -97,6 +114,20 @@ function fromWireEvent(e: WireEvent): EventItem {
   };
 }
 
+function fromWireEventDetail(e: WireEventDetail): EventDetail {
+  return {
+    ...fromWireEvent(e),
+    organiser: e.organiser,
+    capacity: e.capacity,
+    sold: e.sold,
+    seatsLeft: e.seats_left,
+    checkedIn: e.checked_in,
+    myPasses: e.my_passes.map(fromWirePass),
+    ...(e.revenue !== undefined ? { revenue: e.revenue } : {}),
+    ...(e.attendance_pct !== undefined ? { attendancePct: e.attendance_pct } : {}),
+  };
+}
+
 function fromWireAccountLine(l: WirePnlAccountLine): PnlAccountLine {
   return { code: l.code, name: l.name, amount: l.amount };
 }
@@ -111,8 +142,8 @@ export const realEventsApi = {
     return { ...result, results: result.results.map(fromWireEvent) };
   },
 
-  async get(id: number): Promise<EventItem> {
-    return fromWireEvent(await request<WireEvent>(`/events/${id}`));
+  async get(id: number): Promise<EventDetail> {
+    return fromWireEventDetail(await request<WireEventDetail>(`/events/${id}`));
   },
 
   async create(draft: EventDraft): Promise<EventItem> {

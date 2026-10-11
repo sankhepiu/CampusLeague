@@ -7,9 +7,14 @@ export interface CartItem {
   productName: string;
   productImage: string | null;
   sizeLabel: string;
-  /** Snapshot of price at add-time, for an estimated subtotal only — the
-   * authoritative total always comes from the server's order response. */
+  /** Snapshots of price at add-time, for an estimated order-summary
+   * breakdown only — the authoritative total always comes from the
+   * server's order response. */
   unitPriceEstimate: number;
+  unitBasePriceEstimate: number;
+  /** Price after the sale discount but before any member discount — lets the
+   * cart show "sale" and "member" as two separate summary lines. */
+  unitSalePriceEstimate: number;
   quantity: number;
 }
 

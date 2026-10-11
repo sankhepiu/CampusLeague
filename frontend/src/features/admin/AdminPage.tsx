@@ -1,15 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { PageShell } from '../../components/PageShell/PageShell';
 import { Panel } from '../../components/Panel/Panel';
-import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
-import { Spinner } from '../../components/Spinner/Spinner';
 import { DataTable, type DataTableColumn } from '../../components/DataTable/DataTable';
-import { TextInput } from '../../components/FormField/TextInput';
 import { SelectInput } from '../../components/FormField/SelectInput';
-import type { ApiError } from '../../api/client';
 import { useAsync } from '../../core/hooks/useAsync';
 import { accentVarForFeature } from '../../core/config/accents';
-import { ROLES, ROLE_LABELS, type Role } from '../../core/config/roles';
+import { ROLE_LABELS } from '../../core/config/roles';
 import { membersApi } from '../members/api';
 import { adminApi } from './api';
 import type { AuditLogItem } from './types';
@@ -35,38 +32,8 @@ function RoleAssignments() {
   const members = useAsync(() => membersApi.list({}), []);
   const { status, data, error, reload } = useAsync(() => adminApi.listRoles(), []);
 
-  const [userId, setUserId] = useState('');
-  const [role, setRole] = useState<Role>('event_manager');
-  const [termStart, setTermStart] = useState('');
-  const [termEnd, setTermEnd] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [generalError, setGeneralError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [savedOnce, setSavedOnce] = useState(false);
-
   const membersById = new Map((members.data ?? []).map((m) => [m.id, m.name]));
   const roleRows = data?.results ?? [];
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setFieldErrors({});
-    setGeneralError(null);
-    setSubmitting(true);
-    try {
-      await adminApi.assignRole({ user: Number(userId), role, termStart, termEnd });
-      setSavedOnce(true);
-      setUserId('');
-      setTermStart('');
-      setTermEnd('');
-      reload();
-    } catch (err) {
-      const apiErr = err as ApiError;
-      if (apiErr.field) setFieldErrors({ [apiErr.field]: apiErr.message });
-      else setGeneralError(apiErr.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const columns: DataTableColumn<(typeof roleRows)[number]>[] = [
     { key: 'user', header: 'User', render: (r) => membersById.get(r.user) ?? `#${r.user}` },
@@ -77,28 +44,12 @@ function RoleAssignments() {
 
   return (
     <Panel accent={accentVarForFeature('admin')}>
-      {savedOnce && <p className={styles.successNote}>Role assigned.</p>}
-      {generalError && <ErrorBox error={generalError} />}
-      <form onSubmit={submit} noValidate>
-        <div className={styles.formRow}>
-          <SelectInput
-            label="User"
-            required
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            options={[{ value: '', label: 'Choose…' }, ...(members.data ?? []).map((m) => ({ value: String(m.id), label: `${m.name} (${m.email})` }))]}
-            error={fieldErrors.user}
-          />
-          <SelectInput label="Role" value={role} onChange={(e) => setRole(e.target.value as Role)} options={ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))} error={fieldErrors.role} />
-          <TextInput label="Term Start" type="date" required value={termStart} onChange={(e) => setTermStart(e.target.value)} error={fieldErrors.term_start} />
-          <TextInput label="Term End" type="date" required value={termEnd} onChange={(e) => setTermEnd(e.target.value)} error={fieldErrors.term_end} />
-        </div>
-        <button type="submit" className={styles.button} disabled={submitting || !userId || !termStart || !termEnd}>
-          {submitting ? <Spinner size={16} label="Assigning" /> : 'Assign Role'}
-        </button>
-      </form>
-
-      <div className={styles.readable} style={{ marginTop: '1.5rem' }}>
+      {/* A role is now offered, not imposed — nominating, the pending invite
+          list and ending a term all live on the dedicated Roles page. */}
+      <p className={styles.successNote}>
+        <Link to="/roles">Manage role invites and terms →</Link>
+      </p>
+      <div className={styles.readable}>
         <DataTable columns={columns} rows={roleRows} rowKey={(r) => String(r.id)} isLoading={status === 'loading'} error={status === 'error' ? error : null} onRetry={reload} emptyMessage="No role assignments yet." />
       </div>
     </Panel>

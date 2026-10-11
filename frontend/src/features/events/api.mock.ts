@@ -1,6 +1,7 @@
 import { ApiRequestError, type Paginated } from '../../api/client';
+import { getCurrentMockUser } from '../auth/mockUsers';
 import { computeEventExpenses } from '../finance/financeLedgerEngine';
-import { countsForMockEvent, revenueForMockEvent } from '../tickets/mockTicketsStore';
+import { countsForMockEvent, listMockPassesForUserAndEvent, revenueForMockEvent } from '../tickets/mockTicketsStore';
 import {
   addMockTier,
   createMockEvent,
@@ -8,8 +9,33 @@ import {
   listMockEvents,
   toPublicEvent,
   updateMockEvent,
+  type MockEvent,
 } from './mockEventsStore';
-import type { Attendance, EventDraft, EventItem, Pnl, Tier, TierDraft } from './types';
+import type { Attendance, EventDetail, EventDraft, EventItem, Pnl, Tier, TierDraft } from './types';
+
+const REVENUE_ROLES = ['president', 'event_manager'];
+
+function toPublicEventDetail(event: MockEvent): EventDetail {
+  const item = toPublicEvent(event);
+  const counts = countsForMockEvent(event.id);
+  const user = getCurrentMockUser();
+  const canSeeFinance = user?.roles.some((r) => REVENUE_ROLES.includes(r)) ?? false;
+  return {
+    ...item,
+    organiser: { name: event.organiserName },
+    capacity: event.capacityTotal,
+    sold: counts.sold,
+    seatsLeft: item.tiers.reduce((sum, t) => sum + t.seatsLeft, 0),
+    checkedIn: counts.checkedIn,
+    myPasses: user ? listMockPassesForUserAndEvent(user.email, event.id) : [],
+    ...(canSeeFinance
+      ? {
+          revenue: revenueForMockEvent(event.id),
+          attendancePct: counts.sold === 0 ? null : Math.round((counts.checkedIn / counts.sold) * 1000) / 10,
+        }
+      : {}),
+  };
+}
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const PAGE_SIZE = 20;
@@ -31,11 +57,11 @@ export const mockEventsApi = {
     return paginate(listMockEvents().map(toPublicEvent), page);
   },
 
-  async get(id: number): Promise<EventItem> {
+  async get(id: number): Promise<EventDetail> {
     await delay(250);
     const event = getMockEvent(id);
     if (!event) throw new ApiRequestError({ code: 'not_found', message: 'No such event.' });
-    return toPublicEvent(event);
+    return toPublicEventDetail(event);
   },
 
   async create(draft: EventDraft): Promise<EventItem> {

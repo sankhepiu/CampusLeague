@@ -1,6 +1,7 @@
 import { ApiRequestError } from '../../api/client';
 import { findUserById, getCurrentMockUser, updateUser } from '../auth/mockUsers';
-import type { AuditLogItem, RoleAssignment, RoleAssignmentDraft } from './types';
+import type { Role } from '../../core/config/roles';
+import type { AuditLogItem, RoleAssignment } from './types';
 
 type MockRoleAssignment = RoleAssignment;
 
@@ -109,6 +110,61 @@ function appendAudit(entry: Omit<AuditLogItem, 'id' | 'at'>): void {
   saveAudit(items);
 }
 
+/** Used by the roles feature's mock invite flow — an accepted invite creates
+ * the role assignment itself, the same way `assignRole` below used to before
+ * the invite step existed. Not president-gated here: the caller (accepting
+ * the invite) already did its own "is this the nominee" check. */
+export function addMockRoleAssignment(userId: number, role: Role, termStart: string, termEnd: string): RoleAssignment {
+  const items = loadRoles();
+  const created: MockRoleAssignment = { id: items.reduce((max, r) => Math.max(max, r.id), 0) + 1, user: userId, role, termStart, termEnd, createdAt: new Date().toISOString() };
+  items.push(created);
+  saveRoles(items);
+
+  const target = findUserById(userId);
+  if (target && !target.roles.includes(role)) {
+    updateUser(target.email, { roles: [...target.roles, role] });
+  }
+  return created;
+}
+
+/** Ends every current (not-yet-ended) assignment of `role` for `userId` by
+ * backdating its term — used when the roles feature ends an assignment. */
+export function endMockRoleAssignment(userId: number, role: Role): RoleAssignment | null {
+  const items = loadRoles();
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const current = items.find((r) => r.user === userId && r.role === role && r.termEnd >= today);
+  if (!current) return null;
+
+  if (current.termStart === today) {
+    saveRoles(items.filter((r) => r.id !== current.id));
+  } else {
+    current.termEnd = yesterday;
+    saveRoles(items);
+  }
+
+  const target = findUserById(userId);
+  // Only drop the role from the user's live roles if they hold no other
+  // current assignment of it (the mock doesn't model multiple concurrent
+  // terms of the same role, so in practice this always clears it).
+  if (target) {
+    const stillHolds = loadRoles().some((r) => r.user === userId && r.role === role && r.termEnd >= today);
+    if (!stillHolds) updateUser(target.email, { roles: target.roles.filter((r) => r !== role) });
+  }
+  return current.termStart === today ? null : { ...current, termEnd: yesterday };
+}
+
+export function findMockRoleAssignment(id: number): RoleAssignment | undefined {
+  return loadRoles().find((r) => r.id === id);
+}
+
+export function currentRoleHoldersCount(role: Role): number {
+  const today = new Date().toISOString().slice(0, 10);
+  return loadRoles().filter((r) => r.role === role && r.termStart <= today && r.termEnd >= today).length;
+}
+
+export { appendAudit as appendMockAudit };
+
 function requirePresident() {
   const user = getCurrentMockUser();
   if (!user) throw new ApiRequestError({ code: 'not_authenticated', message: 'No active session.' });
@@ -122,32 +178,6 @@ export const mockAdmin = {
   listRoles(): RoleAssignment[] {
     requirePresident();
     return loadRoles().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  },
-
-  assignRole(draft: RoleAssignmentDraft): RoleAssignment {
-    const actor = requirePresident();
-    if (draft.termEnd < draft.termStart) {
-      throw new ApiRequestError({ code: 'validation_error', message: 'Term end cannot be before term start.', field: 'term_end', errors: [{ field: 'term_end', code: 'term_end_before_start', message: 'Term end cannot be before term start.' }] });
-    }
-    const target = findUserById(draft.user);
-    if (!target) throw new ApiRequestError({ code: 'validation_error', message: 'No such user.', field: 'user' });
-
-    const items = loadRoles();
-    const created: MockRoleAssignment = { id: items.reduce((max, r) => Math.max(max, r.id), 0) + 1, user: draft.user, role: draft.role, termStart: draft.termStart, termEnd: draft.termEnd, createdAt: new Date().toISOString() };
-    items.push(created);
-    saveRoles(items);
-
-    // Reflects immediately in the mock's own User.roles (no per-role term
-    // tracking on that object), so the rest of the app sees the new access
-    // right away — a real backend derives roles from assignments + today's
-    // date on every request instead.
-    if (!target.roles.includes(draft.role)) {
-      updateUser(target.email, { roles: [...target.roles, draft.role] });
-    }
-
-    appendAudit({ actor: { id: actor.id, name: actor.name }, action: 'role.assigned', objectType: 'RoleAssignment', objectId: created.id, before: null, after: { user: draft.user, role: draft.role } });
-
-    return created;
   },
 
   listAuditLog(action?: string): AuditLogItem[] {

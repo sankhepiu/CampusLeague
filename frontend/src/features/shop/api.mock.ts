@@ -1,5 +1,6 @@
 import { ApiRequestError, type Paginated } from '../../api/client';
 import { getCurrentMockUser } from '../auth/mockUsers';
+import { applyMockCoupon } from '../coupons/mockCouponsStore';
 import { addMockOrder } from '../orders/mockOrdersStore';
 import {
   createMockProduct,
@@ -104,7 +105,7 @@ export const mockShopApi = {
     return toPublicProduct(restockMockProduct(id, req));
   },
 
-  async placeOrder({ items, testOutcome = 'success' }: PlaceOrderRequest, idempotencyKey: string): Promise<PlaceOrderResult> {
+  async placeOrder({ items, testOutcome = 'success', coupon }: PlaceOrderRequest, idempotencyKey: string): Promise<PlaceOrderResult> {
     await delay(700);
     const user = requireUser();
 
@@ -167,7 +168,7 @@ export const mockShopApi = {
         discount: 0,
       }));
       const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.qty, 0);
-      const order: ShopOrder = { id: orderId, status: 'pending', subtotal, discount: 0, total: subtotal, paymentRef: '', createdAt, lines };
+      const order: ShopOrder = { id: orderId, status: 'pending', subtotal, discount: 0, coupon: null, couponDiscount: 0, total: subtotal, paymentRef: '', needsRefund: false, createdAt, lines };
       return { order, payment: null, replayed: false };
     }
 
@@ -183,11 +184,15 @@ export const mockShopApi = {
       discount: (r.product.basePrice - priceForUnit(r.product.id)) * r.qty,
     }));
     const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.qty, 0);
-    const discount = lines.reduce((sum, l) => sum + l.discount, 0);
+    const preCouponDiscount = lines.reduce((sum, l) => sum + l.discount, 0);
+    const preCouponTotal = subtotal - preCouponDiscount;
+
+    const { discount: couponDiscount, coupon: appliedCoupon } = applyMockCoupon({ code: coupon, appliesTo: 'merch', amount: preCouponTotal, user });
+    const discount = preCouponDiscount + couponDiscount;
     const total = subtotal - discount;
 
     const gatewayRef = mockGatewayRef();
-    const order: ShopOrder = { id: orderId, status: 'paid', subtotal, discount, total, paymentRef: gatewayRef, createdAt, lines };
+    const order: ShopOrder = { id: orderId, status: 'paid', subtotal, discount, coupon: appliedCoupon, couponDiscount, total, paymentRef: gatewayRef, needsRefund: false, createdAt, lines };
     const payment: ShopPayment = { id: orderId + lines.length, amount: total, status: 'succeeded', gatewayRef, createdAt };
     const result: PlaceOrderResult = { order, payment, replayed: false };
 

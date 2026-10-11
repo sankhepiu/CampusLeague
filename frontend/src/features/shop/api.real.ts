@@ -12,7 +12,9 @@ interface WireProduct {
   id: number;
   name: string;
   description: string;
+  category: Product['category'];
   base_price: number;
+  sale_pct: number;
   price: number;
   image_url: string | null;
   active: boolean;
@@ -33,8 +35,11 @@ interface WireOrder {
   status: ShopOrder['status'];
   subtotal: number;
   discount: number;
+  coupon: string | null;
+  coupon_discount: number;
   total: number;
   payment_ref: string;
+  needs_refund: boolean;
   created_at: string;
   lines: WireOrderLine[];
 }
@@ -81,7 +86,9 @@ function fromWireProduct(p: WireProduct): Product {
     id: p.id,
     name: p.name,
     description: p.description,
+    category: p.category,
     basePrice: p.base_price,
+    salePct: p.sale_pct,
     price: p.price,
     imageUrl: p.image_url,
     active: p.active,
@@ -99,8 +106,11 @@ function fromWireOrder(o: WireOrder): ShopOrder {
     status: o.status,
     subtotal: o.subtotal,
     discount: o.discount,
+    coupon: o.coupon,
+    couponDiscount: o.coupon_discount,
     total: o.total,
     paymentRef: o.payment_ref,
+    needsRefund: o.needs_refund,
     createdAt: o.created_at,
     lines: o.lines.map(fromWireOrderLine),
   };
@@ -128,6 +138,8 @@ export const realShopApi = {
           name: draft.name,
           base_price: draft.basePrice,
           ...(draft.description !== undefined ? { description: draft.description } : {}),
+          ...(draft.category !== undefined ? { category: draft.category } : {}),
+          ...(draft.salePct !== undefined ? { sale_pct: draft.salePct } : {}),
           ...(draft.active !== undefined ? { active: draft.active } : {}),
         },
       }),
@@ -139,6 +151,8 @@ export const realShopApi = {
     if (draft.name !== undefined) body.name = draft.name;
     if (draft.basePrice !== undefined) body.base_price = draft.basePrice;
     if (draft.description !== undefined) body.description = draft.description;
+    if (draft.category !== undefined) body.category = draft.category;
+    if (draft.salePct !== undefined) body.sale_pct = draft.salePct;
     if (draft.active !== undefined) body.active = draft.active;
     return fromWireProduct(await request<WireProduct>(`/products/${id}`, { method: 'PATCH', body }));
   },
@@ -147,12 +161,13 @@ export const realShopApi = {
     return fromWireProduct(await request<WireProduct>(`/products/${id}/restock`, { method: 'POST', body: { size, quantity } }));
   },
 
-  async placeOrder({ items, testOutcome }: PlaceOrderRequest, idempotencyKey: string): Promise<PlaceOrderResult> {
+  async placeOrder({ items, testOutcome, coupon }: PlaceOrderRequest, idempotencyKey: string): Promise<PlaceOrderResult> {
     const { status, data: result } = await requestWithStatus<WirePlaceOrderResult>('/orders', {
       method: 'POST',
       body: {
         items: items.map((i) => ({ product_size: i.productSize, ...(i.quantity !== undefined ? { quantity: i.quantity } : {}) })),
         ...(testOutcome ? { test_outcome: testOutcome } : {}),
+        ...(coupon ? { coupon } : {}),
       },
       headers: { 'Idempotency-Key': idempotencyKey },
     });
@@ -172,7 +187,7 @@ export const realShopApi = {
   },
 
   async verifyRazorpayPayment(orderId: number, fields: RazorpayVerifyFields): Promise<PlaceOrderResult> {
-    const result = await request<WirePlaceOrderResult>('/payments/razorpay/verify', {
+    const { status, data: result } = await requestWithStatus<WirePlaceOrderResult>('/payments/razorpay/verify', {
       method: 'POST',
       body: {
         order_id: orderId,
@@ -181,7 +196,7 @@ export const realShopApi = {
         razorpay_signature: fields.razorpaySignature,
       },
     });
-    return { order: fromWireOrder(result.order), payment: result.payment ? fromWirePayment(result.payment) : null, replayed: false };
+    return { order: fromWireOrder(result.order), payment: result.payment ? fromWirePayment(result.payment) : null, replayed: status === 200 };
   },
 
   async cancelRazorpayPayment(orderId: number): Promise<void> {

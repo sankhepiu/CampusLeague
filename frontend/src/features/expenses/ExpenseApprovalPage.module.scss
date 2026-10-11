@@ -1,8 +1,199 @@
 @use '../../styles/mixins';
 
+.viewToggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.toggleButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  border: 3px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.toggleButtonActive {
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+}
+
 .filterRow {
   margin-bottom: 1rem;
   max-width: 16rem;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 56rem) {
+  .columns {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 32rem) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.column {
+  min-height: 3rem;
+  padding: 0.4rem;
+  border: 2px dashed transparent;
+  transition: border-color 0.12s ease-out, background 0.12s ease-out;
+}
+
+.columnDragOver {
+  border-color: var(--cl-color-primary);
+  background: var(--cl-tint-gold);
+}
+
+.columnTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.65rem;
+  margin: 0 0 0.75rem;
+  color: var(--cl-color-text-muted);
+}
+
+.columnCount {
+  color: var(--cl-color-text-muted);
+  opacity: 0.8;
+}
+
+.expenseCard {
+  margin-bottom: 0.75rem;
+}
+
+.expenseCard[draggable='true'] {
+  cursor: grab;
+}
+
+.expenseCard[draggable='true']:active {
+  cursor: grabbing;
+}
+
+.cardTop {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.receiptThumb {
+  width: 3rem;
+  height: 3rem;
+  object-fit: cover;
+  border: 2px solid var(--cl-color-border);
+  flex-shrink: 0;
+}
+
+.receiptThumbEmpty {
+  width: 3rem;
+  height: 3rem;
+  border: 2px dashed var(--cl-color-border);
+  flex-shrink: 0;
+}
+
+.cardTopInfo {
+  min-width: 0;
+}
+
+.cardAmount {
+  font-size: 1rem;
+  display: block;
+}
+
+.cardMeta {
+  color: var(--cl-color-text-muted);
+  font-size: 0.75rem;
+  margin: 0.15rem 0;
+}
+
+.cardDescription {
+  font-size: 0.8rem;
+  margin: 0.5rem 0;
+}
+
+.moveMenu {
+  margin-top: 0.5rem;
+}
+
+.moveToggle {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  font-size: 0.55rem;
+  padding: 0.4rem 0.5rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+// Rendered in normal flow (not an absolutely-positioned overlay) because the
+// Panel it lives in clips to a notched-corner clip-path — anything painted
+// outside the panel's own box via absolute positioning is clipped from both
+// view AND hit-testing, which silently broke clicks/taps on later items.
+.moveList {
+  display: flex;
+  flex-direction: column;
+  min-width: 7rem;
+  margin-top: 0.3rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+}
+
+.moveItem {
+  @include mixins.focus-ring;
+  font-size: 0.8rem;
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  background: none;
+  border: none;
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.moveItem:hover {
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-primary);
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: grid;
+  place-items: center;
+  background: var(--cl-overlay);
+  padding: 1rem;
+}
+
+.modalCard {
+  @include mixins.pixel-border;
+  @include mixins.depth(var(--cl-coral), 5px, 5px);
+  background: var(--cl-color-panel);
+  padding: 1.75rem;
+  max-width: 24rem;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.modalTitle {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.8rem;
+  margin: 0;
 }
 
 .list {

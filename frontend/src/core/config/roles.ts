@@ -36,6 +36,8 @@ export const FEATURE_ACCESS = {
   checkin: ['president', 'event_manager', 'volunteer_coordinator'],
   eventAdmin: ['president', 'event_manager'],
   shopAdmin: ['president', 'treasurer', 'event_manager'],
+  couponAdmin: ['president', 'treasurer'],
+  roleAdmin: ['president'],
   announcementCompose: ['president', 'event_manager', 'volunteer_coordinator'],
   volunteerAdmin: ['president', 'volunteer_coordinator'],
   // Submitting/viewing your own reimbursement requests is open to anyone —

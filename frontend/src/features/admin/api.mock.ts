@@ -1,6 +1,6 @@
 import type { Paginated } from '../../api/client';
 import { mockAdmin } from './mockAdminStore';
-import type { AuditLogItem, AuditLogParams, RoleAssignment, RoleAssignmentDraft } from './types';
+import type { AuditLogItem, AuditLogParams, RoleAssignment } from './types';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const PAGE_SIZE = 20;
@@ -15,11 +15,6 @@ export const mockAdminApi = {
   async listRoles(page = 1): Promise<Paginated<RoleAssignment>> {
     await delay(300);
     return paginate(mockAdmin.listRoles(), page);
-  },
-
-  async assignRole(draft: RoleAssignmentDraft): Promise<RoleAssignment> {
-    await delay(400);
-    return mockAdmin.assignRole(draft);
   },
 
   async listAuditLog(params: AuditLogParams = {}, page = 1): Promise<Paginated<AuditLogItem>> {

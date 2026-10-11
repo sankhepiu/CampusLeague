@@ -14,10 +14,13 @@ import { EventsPage } from '../../features/events/EventsPage';
 import { EventDetailPage } from '../../features/events/EventDetailPage';
 import { EventAdminPage } from '../../features/events/EventAdminPage';
 import { TicketsPage } from '../../features/tickets/TicketsPage';
+import { PassDetailPage } from '../../features/tickets/PassDetailPage';
 import { ShopPage } from '../../features/shop/ShopPage';
 import { ProductDetailPage } from '../../features/shop/ProductDetailPage';
 import { CartPage } from '../../features/shop/CartPage';
 import { ShopAdminPage } from '../../features/shop/ShopAdminPage';
+import { CouponAdminPage } from '../../features/coupons/CouponAdminPage';
+import { RoleAdminPage } from '../../features/roles/RoleAdminPage';
 import { OrdersPage } from '../../features/orders/OrdersPage';
 import { VolunteeringPage } from '../../features/volunteering/VolunteeringPage';
 import { FundraiserDetailPage } from '../../features/volunteering/FundraiserDetailPage';
@@ -66,6 +69,7 @@ export function AppRoutes() {
         <Route path="/membership" element={<MembershipPage />} />
         <Route path="/membership/card" element={<MemberCardPage />} />
         <Route path="/tickets" element={<TicketsPage />} />
+        <Route path="/tickets/:id" element={<PassDetailPage />} />
         <Route path="/shop" element={<ShopPage />} />
         <Route path="/shop/cart" element={<CartPage />} />
         <Route path="/shop/:id" element={<ProductDetailPage />} />
@@ -119,6 +123,22 @@ export function AppRoutes() {
           element={
             <ProtectedRoute roles={FEATURE_ACCESS.shopAdmin}>
               <ShopAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/shop/coupons"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.couponAdmin}>
+              <CouponAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/roles"
+          element={
+            <ProtectedRoute roles={FEATURE_ACCESS.roleAdmin}>
+              <RoleAdminPage />
             </ProtectedRoute>
           }
         />

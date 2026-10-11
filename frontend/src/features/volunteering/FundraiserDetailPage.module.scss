@@ -158,7 +158,6 @@
 }
 
 .moveMenu {
-  position: relative;
   margin-top: 0.5rem;
 }
 
@@ -174,18 +173,17 @@
   cursor: pointer;
 }
 
+// Rendered in normal flow (not an absolutely-positioned overlay) because the
+// Panel it lives in clips to a notched-corner clip-path — anything painted
+// outside the panel's own box via absolute positioning is clipped from both
+// view AND hit-testing, which silently broke clicks/taps on later items.
 .moveList {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 3;
   display: flex;
   flex-direction: column;
   min-width: 7rem;
   margin-top: 0.3rem;
   border: 2px solid var(--cl-color-border);
-  background: var(--cl-color-panel);
-  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
+  background: var(--cl-color-bg-raised);
 }
 
 .moveItem {

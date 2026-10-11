@@ -9,13 +9,6 @@ export interface RoleAssignment {
   createdAt: string;
 }
 
-export interface RoleAssignmentDraft {
-  user: number;
-  role: Role;
-  termStart: string;
-  termEnd: string;
-}
-
 export interface AuditActor {
   id: number;
   name: string;

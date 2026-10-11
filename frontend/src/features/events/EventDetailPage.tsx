@@ -6,6 +6,8 @@ import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { Spinner } from '../../components/Spinner/Spinner';
 import { Money } from '../../components/Money/Money';
 import { StatusBadge } from '../../components/StatusBadge/StatusBadge';
+import { ProgressBar } from '../../components/ProgressBar/ProgressBar';
+import { QRCode } from '../../components/QRCode/QRCode';
 import { ReplayNote, TestPayment } from '../../components/TestPayment/TestPayment';
 import { isRetryablePaymentError } from '../../components/TestPayment/paymentErrors';
 import { RazorpayPayButton } from '../../components/RazorpayPayButton/RazorpayPayButton';
@@ -27,10 +29,12 @@ import styles from './EventDetailPage.module.scss';
 type CheckoutPhase = 'idle' | 'submitting' | 'success' | 'pending' | 'error' | 'cancelled';
 
 function tierAvailability(tier: Tier): { available: boolean; reason?: string } {
-  const now = Date.now();
   if (tier.seatsLeft === 0) return { available: false, reason: 'Sold out' };
-  if (tier.saleOpens && now < new Date(tier.saleOpens).getTime()) return { available: false, reason: 'Sale not open' };
-  if (tier.saleCloses && now > new Date(tier.saleCloses).getTime()) return { available: false, reason: 'Sale closed' };
+  if (!tier.saleOpen) {
+    const now = Date.now();
+    if (tier.saleOpens && now < new Date(tier.saleOpens).getTime()) return { available: false, reason: 'Sale not open' };
+    return { available: false, reason: 'Sale closed' };
+  }
   return { available: true };
 }
 
@@ -147,7 +151,16 @@ export function EventDetailPage() {
         </div>
       </div>
 
+      <p className={styles.meta}>Organised by {event.organiser.name}</p>
+
       {event.description && <p className={styles.description}>{event.description}</p>}
+
+      <Panel accent={accentVarForFeature('events')} className={styles.capacityPanel}>
+        <ProgressBar
+          percent={event.capacity > 0 ? (event.sold / event.capacity) * 100 : 0}
+          label={`${event.sold} sold · ${event.seatsLeft} seat${event.seatsLeft === 1 ? '' : 's'} left · ${event.checkedIn} checked in`}
+        />
+      </Panel>
 
       <div className={styles.tierGrid}>
         {event.tiers.map((tier) => {
@@ -186,6 +199,11 @@ export function EventDetailPage() {
                 {purchaseResult.tickets.length === 1 ? '' : 's'} for {selectedTier.name}.
               </p>
               {purchaseResult.replayed && <ReplayNote />}
+              {purchaseResult.pass && (
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '1rem 0' }}>
+                  <QRCode value={purchaseResult.pass.qrToken} size={160} />
+                </div>
+              )}
               <ul className={styles.ticketList}>
                 {purchaseResult.tickets.map((t) => (
                   <li key={t.id} className={styles.ticketRow}>

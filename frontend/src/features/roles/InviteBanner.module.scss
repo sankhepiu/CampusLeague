@@ -1,0 +1,47 @@
+.stack {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem 0;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--cl-gold);
+  background: var(--cl-tint-gold);
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.accept,
+.decline {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border: 2px solid var(--cl-color-border);
+  cursor: pointer;
+}
+
+.accept {
+  background: var(--cl-color-primary);
+  color: var(--cl-base);
+}
+
+.decline {
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+}
+
+.accept:disabled,
+.decline:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

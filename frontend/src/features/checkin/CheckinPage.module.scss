@@ -32,6 +32,45 @@
   padding: 1.5rem;
 }
 
+.admitCountRow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+
+.admitCountValue {
+  font-family: var(--cl-font-pixel);
+  font-size: 0.9rem;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.admitCountHint {
+  color: var(--cl-color-text-muted);
+  font-size: 0.75rem;
+  flex-basis: 100%;
+}
+
+.qtyButton {
+  @include mixins.pressable;
+  @include mixins.focus-ring;
+  font-family: var(--cl-font-pixel);
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--cl-color-border);
+  background: var(--cl-color-bg-raised);
+  color: var(--cl-color-text);
+  cursor: pointer;
+}
+
+.qtyButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .manualForm {
   display: flex;
   gap: 0.75rem;

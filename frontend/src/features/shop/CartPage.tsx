@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageShell } from '../../components/PageShell/PageShell';
 import { Panel } from '../../components/Panel/Panel';
@@ -6,6 +6,7 @@ import { EmptyState } from '../../components/EmptyState/EmptyState';
 import { ErrorBox } from '../../components/ErrorBox/ErrorBox';
 import { Spinner } from '../../components/Spinner/Spinner';
 import { Money } from '../../components/Money/Money';
+import { TextInput } from '../../components/FormField/TextInput';
 import { ReplayNote, TestPayment } from '../../components/TestPayment/TestPayment';
 import { isRetryablePaymentError } from '../../components/TestPayment/paymentErrors';
 import { RazorpayPayButton } from '../../components/RazorpayPayButton/RazorpayPayButton';
@@ -15,6 +16,8 @@ import { useCart } from '../../core/hooks/useCart';
 import { usePaymentsConfig } from '../../core/hooks/usePaymentsConfig';
 import { accentVarForFeature } from '../../core/config/accents';
 import { shopApi } from './api';
+import { couponsApi } from '../coupons/api';
+import type { CouponValidateResponse } from '../coupons/types';
 import { razorpayErrorMessage } from '../payments/errors';
 import type { RazorpayVerifyFields } from '../payments/types';
 import type { PaymentTestOutcome, PlaceOrderResult } from './types';
@@ -36,12 +39,48 @@ export function CartPage() {
   const [error, setError] = useState<ApiError | null>(null);
   const [result, setResult] = useState<PlaceOrderResult | null>(null);
 
+  // Order summary breakdown: subtotal (base prices) → sale → member discount
+  // → coupon → total. Sale/member are estimates snapshotted when each item
+  // was added to the cart; the server works out the authoritative figures.
+  const breakdown = useMemo(() => {
+    const baseSubtotal = items.reduce((sum, i) => sum + i.unitBasePriceEstimate * i.quantity, 0);
+    const saleDiscount = items.reduce((sum, i) => sum + Math.max(0, i.unitBasePriceEstimate - i.unitSalePriceEstimate) * i.quantity, 0);
+    const memberDiscount = items.reduce((sum, i) => sum + Math.max(0, i.unitSalePriceEstimate - i.unitPriceEstimate) * i.quantity, 0);
+    return { baseSubtotal, saleDiscount, memberDiscount, preCouponTotal: estimatedSubtotal };
+  }, [items, estimatedSubtotal]);
+
+  const [couponCode, setCouponCode] = useState('');
+  const [couponResult, setCouponResult] = useState<CouponValidateResponse | null>(null);
+  const [couponChecking, setCouponChecking] = useState(false);
+
+  useEffect(() => {
+    const code = couponCode.trim();
+    if (!code) {
+      setCouponResult(null);
+      return;
+    }
+    setCouponChecking(true);
+    const timer = setTimeout(() => {
+      couponsApi
+        .validate({ code, appliesTo: 'merch', amount: breakdown.preCouponTotal })
+        .then(setCouponResult)
+        .catch(() => setCouponResult({ valid: false, discount: 0, finalAmount: breakdown.preCouponTotal, reason: null, message: 'Could not check this coupon.' }))
+        .finally(() => setCouponChecking(false));
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couponCode, breakdown.preCouponTotal]);
+
+  const couponDiscount = couponResult?.valid ? couponResult.discount : 0;
+  const appliedCoupon = couponResult?.valid ? couponCode.trim().toUpperCase() : undefined;
+  const grandTotal = breakdown.preCouponTotal - couponDiscount;
+
   const checkout = async (key: string) => {
     setPhase('submitting');
     setError(null);
     try {
       const res = await shopApi.placeOrder(
-        { items: items.map((i) => ({ productSize: i.productSizeId, quantity: i.quantity })), testOutcome },
+        { items: items.map((i) => ({ productSize: i.productSizeId, quantity: i.quantity })), testOutcome, coupon: appliedCoupon },
         key,
       );
       setResult(res);
@@ -116,8 +155,14 @@ export function CartPage() {
           </p>
           {result.replayed && <ReplayNote />}
           <p>
-            Subtotal <Money paise={result.order.subtotal} /> · Discount <Money paise={result.order.discount} /> · Total{' '}
-            <Money paise={result.order.total} />
+            Subtotal <Money paise={result.order.subtotal} /> · Discount <Money paise={result.order.discount} />
+            {result.order.coupon && (
+              <>
+                {' '}
+                (incl. <Money paise={result.order.couponDiscount} /> from {result.order.coupon})
+              </>
+            )}{' '}
+            · Total <Money paise={result.order.total} />
           </p>
           <Link to="/orders" className={styles.button} style={{ textDecoration: 'none', display: 'inline-block', marginTop: '1rem' }}>
             View My Orders
@@ -152,12 +197,7 @@ export function CartPage() {
               </li>
             ))}
           </ul>
-          <div className={styles.summaryRow}>
-            <strong>Estimated total</strong>
-            <strong>
-              <Money paise={estimatedSubtotal} />
-            </strong>
-          </div>
+          <OrderSummaryBreakdown breakdown={breakdown} couponCode={appliedCoupon} couponDiscount={couponDiscount} total={grandTotal} />
           <p className={styles.estimateNote}>The server works out the final price and any member discount when you pay.</p>
 
           {phase === 'pending' && (
@@ -254,10 +294,20 @@ export function CartPage() {
       </div>
 
       <Panel className={styles.summary}>
-        <div className={styles.summaryRow}>
-          <span>Estimated subtotal</span>
-          <Money paise={estimatedSubtotal} />
-        </div>
+        <TextInput
+          label="Coupon code"
+          placeholder="e.g. MERCH20"
+          value={couponCode}
+          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+        />
+        {couponChecking && <Spinner size={14} label="Checking coupon" />}
+        {!couponChecking && couponResult && (
+          <p className={couponResult.valid ? styles.couponValid : styles.couponInvalid}>
+            {couponResult.valid ? `${couponCode.trim().toUpperCase()} applied: -₹${(couponResult.discount / 100).toFixed(2)}` : couponResult.message}
+          </p>
+        )}
+
+        <OrderSummaryBreakdown breakdown={breakdown} couponCode={appliedCoupon} couponDiscount={couponDiscount} total={grandTotal} />
         <p className={styles.estimateNote}>Final subtotal, discount and total are decided by the server when you pay.</p>
 
         {/* A sold-out or unavailable item sends the buyer back here to fix the cart. */}
@@ -274,5 +324,56 @@ export function CartPage() {
       </Panel>
 
     </PageShell>
+  );
+}
+
+function OrderSummaryBreakdown({
+  breakdown,
+  couponCode,
+  couponDiscount,
+  total,
+}: {
+  breakdown: { baseSubtotal: number; saleDiscount: number; memberDiscount: number };
+  couponCode: string | undefined;
+  couponDiscount: number;
+  total: number;
+}) {
+  return (
+    <div className={styles.breakdown}>
+      <div className={styles.summaryRow}>
+        <span>Subtotal</span>
+        <Money paise={breakdown.baseSubtotal} />
+      </div>
+      {breakdown.saleDiscount > 0 && (
+        <div className={styles.summaryRow}>
+          <span>Sale</span>
+          <span>
+            −<Money paise={breakdown.saleDiscount} />
+          </span>
+        </div>
+      )}
+      {breakdown.memberDiscount > 0 && (
+        <div className={styles.summaryRow}>
+          <span>Member discount</span>
+          <span>
+            −<Money paise={breakdown.memberDiscount} />
+          </span>
+        </div>
+      )}
+      {couponCode && couponDiscount > 0 && (
+        <div className={styles.summaryRow}>
+          <span>Coupon ({couponCode})</span>
+          <span>
+            −<Money paise={couponDiscount} />
+          </span>
+        </div>
+      )}
+      <div className={`${styles.summaryRow} ${styles.summaryTotal}`}>
+        <strong>Total</strong>
+        <strong>
+          <Money paise={total} />
+        </strong>
+      </div>
+    </div>
   );
 }
